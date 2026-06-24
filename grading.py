@@ -6,6 +6,9 @@ import torch
 @dataclass
 class GradeParams:
     exposure: float = 0.0
+    auto_exposure: bool = False
+    auto_exposure_lock: bool = False
+    auto_exposure_ev: float = 0.0
     tone_mapping: str = "ACES Fitted"
     soft_clip: float = 0.0
     temperature: float = 0.0
@@ -21,7 +24,32 @@ class GradeParams:
     saturation: float = 1.0
     vibrance: float = 0.0
     hue_shift: float = 0.0
+    color_matrix: tuple[float, float, float, float, float, float, float, float, float] = (
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    )
+    density: float = 0.0
+    black_lift: float = 0.0
+    shadow_tone: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    highlight_tone: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    tone_balance: float = 0.5
     false_color: bool = False
+
+
+@dataclass
+class ExposureInfo:
+    auto_ev: float = 0.0
+    bias_ev: float = 0.0
+    final_ev: float = 0.0
+    auto_enabled: bool = False
+    auto_locked: bool = False
 
 
 TONE_MAPS = ["None", "Reinhard", "ACES Fitted", "AgX", "Hable"]
@@ -106,6 +134,7 @@ def _hable(x: torch.Tensor) -> torch.Tensor:
 
 
 def _false_color(c: torch.Tensor) -> torch.Tensor:
+    c = torch.nan_to_num(c.float(), nan=0.0, posinf=0.0, neginf=0.0).clamp(min=0.0)
     lum = torch.log2(_luma(c).squeeze(-1).clamp(min=1e-6) / 0.18)
     stops = torch.clamp((lum + 6.0) / 12.0, 0.0, 1.0)
     anchors = torch.tensor(
@@ -137,10 +166,110 @@ def _soft_clip(c: torch.Tensor, amount: float) -> torch.Tensor:
     return torch.where(above, compressed, c)
 
 
-def grade_linear(hdr: torch.Tensor, params: GradeParams) -> torch.Tensor:
+def _apply_midtone_gamma(c: torch.Tensor, gamma: torch.Tensor, pivot: float) -> torch.Tensor:
+    pivot = max(float(pivot), 1e-6)
+    gamma = gamma.clamp(min=0.1, max=4.0)
+    normalized = c / (c + pivot)
+    adjusted = torch.pow(normalized.clamp(0.0, 1.0), 1.0 / gamma)
+    ratio = adjusted / normalized.clamp(min=1e-6)
+    mid_weight = torch.clamp(4.0 * normalized * (1.0 - normalized), 0.0, 1.0)
+    ratio = 1.0 + (ratio - 1.0) * mid_weight
+    ratio = ratio.clamp(0.02, 8.0)
+    return torch.where(c > 0.0, c * ratio, c)
+
+
+def _apply_chroma_scale(c: torch.Tensor, lum: torch.Tensor, scale) -> torch.Tensor:
+    scale = torch.as_tensor(scale, device=c.device, dtype=c.dtype)
+    chroma = c - lum
+    min_chroma = chroma.min(dim=-1, keepdim=True).values
+    max_scale = lum / (-min_chroma).clamp(min=1e-6)
+    safe_scale = torch.where(scale > 1.0, torch.minimum(scale, max_scale), scale)
+    return lum + chroma * safe_scale
+
+
+def _compute_auto_exposure_stops(c: torch.Tensor) -> torch.Tensor:
+    lum = _luma(c).squeeze(-1)
+    flat = lum.reshape(lum.shape[0], -1) if lum.ndim == 3 else lum.reshape(1, -1)
+    if flat.shape[1] > 262144:
+        step = max(1, flat.shape[1] // 262144)
+        flat = flat[:, ::step]
+    flat_cpu = flat.float().cpu()
+    q = torch.tensor([0.02, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99], dtype=torch.float32)
+    quantiles = torch.quantile(flat_cpu, q, dim=1).to(device=c.device, dtype=c.dtype)
+
+    shape = (-1,) + (1,) * (c.ndim - 1)
+    p02, p10, p25, p50, p75, p90, p95, p99 = [v.reshape(shape).clamp(min=1e-5) for v in quantiles]
+    log_flat = torch.log2(flat_cpu.clamp(min=1e-5))
+    log_average = torch.pow(
+        torch.tensor(2.0, device=c.device, dtype=c.dtype),
+        log_flat.mean(dim=1).to(device=c.device, dtype=c.dtype).reshape(shape),
+    ).clamp(min=1e-5)
+
+    dynamic_range = torch.log2(p95 / p10).clamp(min=0.0)
+    specular_ratio = torch.log2(p99 / p90).clamp(min=0.0)
+    specular_weight = ((specular_ratio - 1.25) / 2.75).clamp(0.0, 1.0)
+    low_key_weight = ((torch.log2(torch.tensor(0.14, device=c.device, dtype=c.dtype) / p50)) / 2.0).clamp(0.0, 1.0)
+    high_key_weight = ((torch.log2(p50 / torch.tensor(0.34, device=c.device, dtype=c.dtype))) / 1.5).clamp(0.0, 1.0)
+
+    mid_target = torch.lerp(
+        torch.full_like(p50, 0.18),
+        torch.full_like(p50, 0.23),
+        low_key_weight * (1.0 - specular_weight * 0.55),
+    )
+    mid_target = torch.lerp(mid_target, torch.full_like(p50, 0.16), high_key_weight)
+    high_target = torch.lerp(torch.full_like(p90, 1.05), torch.full_like(p90, 1.45), specular_weight)
+    high_meter = torch.lerp(p95, p90, specular_weight)
+
+    mid_stops = torch.log2(mid_target / p50)
+    key_stops = torch.log2(torch.full_like(log_average, 0.18) / log_average)
+    high_stops = torch.log2(high_target / high_meter)
+    shadow_stops = torch.log2(torch.full_like(p10, 0.035) / p10)
+
+    tonal_stops = mid_stops * 0.68 + key_stops * 0.22 + shadow_stops * 0.10
+    highlight_weight = ((dynamic_range - 2.4) / 3.0).clamp(0.20, 0.72) * (1.0 - specular_weight * 0.65)
+    stops = tonal_stops * (1.0 - highlight_weight) + high_stops * highlight_weight
+
+    max_brighten = high_stops + 1.15 + specular_weight * 1.35
+    max_darken = shadow_stops - 1.00
+    stops = torch.minimum(stops, max_brighten)
+    stops = torch.maximum(stops, max_darken)
+    stops = stops.clamp(-3.5, 3.5)
+    return stops
+
+
+def _input_exposure(c: torch.Tensor, params: GradeParams) -> tuple[torch.Tensor, ExposureInfo]:
+    batch = int(c.shape[0]) if c.ndim == 4 else 1
+    shape = (batch,) + (1,) * (c.ndim - 1)
+    if params.auto_exposure:
+        if params.auto_exposure_lock:
+            auto_stops = torch.full(
+                shape,
+                float(params.auto_exposure_ev),
+                device=c.device,
+                dtype=c.dtype,
+            ).clamp(-3.5, 3.5)
+        else:
+            auto_stops = _compute_auto_exposure_stops(c)
+    else:
+        auto_stops = torch.zeros(shape, device=c.device, dtype=c.dtype)
+
+    bias_stops = torch.full_like(auto_stops, float(params.exposure))
+    final_stops = (auto_stops + bias_stops).clamp(-10.0, 10.0)
+    scale = torch.pow(torch.tensor(2.0, device=c.device, dtype=c.dtype), final_stops)
+    info = ExposureInfo(
+        auto_ev=float(auto_stops.flatten()[0].detach().cpu()),
+        bias_ev=float(bias_stops.flatten()[0].detach().cpu()),
+        final_ev=float(final_stops.flatten()[0].detach().cpu()),
+        auto_enabled=bool(params.auto_exposure),
+        auto_locked=bool(params.auto_exposure and params.auto_exposure_lock),
+    )
+    return c * scale, info
+
+
+def grade_linear_with_info(hdr: torch.Tensor, params: GradeParams) -> tuple[torch.Tensor, ExposureInfo]:
     c = torch.nan_to_num(hdr[..., :3].float(), nan=0.0, posinf=0.0, neginf=0.0)
     c = torch.clamp(c, min=0.0)
-    c = c * (2.0 ** float(params.exposure))
+    c, exposure_info = _input_exposure(c, params)
 
     wb = torch.tensor(
         [
@@ -157,14 +286,14 @@ def grade_linear(hdr: torch.Tensor, params: GradeParams) -> torch.Tensor:
     offset = torch.tensor(params.offset, device=c.device, dtype=c.dtype)
     lift = torch.tensor(params.lift, device=c.device, dtype=c.dtype)
     gain = torch.tensor(params.gain, device=c.device, dtype=c.dtype)
-    gamma = torch.tensor(params.gamma, device=c.device, dtype=c.dtype).clamp(min=0.01)
+    gamma = torch.tensor(params.gamma, device=c.device, dtype=c.dtype)
+    pivot = max(float(params.pivot), 1e-6)
 
     c = c + offset
     c = c + lift * (1.0 - lum * 2.0).clamp(0.0, 1.0)
     c = c * gain
-    c = torch.pow(c.clamp(min=0.0), 1.0 / gamma)
+    c = _apply_midtone_gamma(c.clamp(min=0.0), gamma, pivot)
 
-    pivot = max(float(params.pivot), 1e-6)
     c = (c - pivot) * float(params.contrast) + pivot
     c = torch.clamp(c, min=0.0)
 
@@ -176,12 +305,50 @@ def grade_linear(hdr: torch.Tensor, params: GradeParams) -> torch.Tensor:
     c = torch.clamp(c, min=0.0)
 
     lum = _luma(c)
-    if abs(float(params.vibrance)) > 0.001:
-        chroma = c.max(dim=-1, keepdim=True).values - c.min(dim=-1, keepdim=True).values
-        boost = (1.0 - chroma * 2.0) * float(params.vibrance)
-        c = lum + (c - lum) * (1.0 + boost)
+    matrix = torch.tensor(params.color_matrix, device=c.device, dtype=c.dtype).reshape(3, 3)
+    if torch.max(torch.abs(matrix - torch.eye(3, device=c.device, dtype=c.dtype))) > 0.0001:
+        c = torch.matmul(c, matrix.transpose(0, 1))
+        c = torch.clamp(c, min=0.0)
+        lum = _luma(c)
 
-    c = lum + (c - lum) * float(params.saturation)
+    if abs(float(params.black_lift)) > 0.001:
+        black_w = (1.0 / (1.0 + torch.exp(18.0 * (lum - 0.12)))).clamp(0.0, 1.0)
+        c = c + float(params.black_lift) * black_w
+        c = torch.clamp(c, min=0.0)
+        lum = _luma(c)
+
+    if abs(float(params.density)) > 0.001:
+        density = float(params.density)
+        c = _apply_chroma_scale(c, lum, 1.0 + density * 0.35)
+        c = c * (1.0 - density * 0.08)
+        c = torch.clamp(c, min=0.0)
+        lum = _luma(c)
+
+    shadow_tone = torch.tensor(params.shadow_tone, device=c.device, dtype=c.dtype)
+    highlight_tone = torch.tensor(params.highlight_tone, device=c.device, dtype=c.dtype)
+    if torch.max(torch.abs(shadow_tone)) > 0.0001 or torch.max(torch.abs(highlight_tone)) > 0.0001:
+        balance = float(params.tone_balance)
+        shadow_center = 0.22 + (balance - 0.5) * 0.18
+        highlight_center = 0.58 + (balance - 0.5) * 0.18
+        shadow_w = 1.0 / (1.0 + torch.exp(14.0 * (lum - shadow_center)))
+        highlight_w = 1.0 / (1.0 + torch.exp(-14.0 * (lum - highlight_center)))
+        c = c + shadow_tone * shadow_w + highlight_tone * highlight_w
+        c = torch.clamp(c, min=0.0)
+        lum = _luma(c)
+
+    if abs(float(params.vibrance)) > 0.001:
+        vibrance = float(params.vibrance)
+        rgb_max = c.max(dim=-1, keepdim=True).values.clamp(min=1e-6)
+        chroma = c.max(dim=-1, keepdim=True).values - c.min(dim=-1, keepdim=True).values
+        relative_chroma = (chroma / rgb_max).clamp(0.0, 1.0)
+        if vibrance > 0.0:
+            factor = 1.0 + vibrance * 0.45 * (1.0 - relative_chroma) ** 1.35
+        else:
+            factor = 1.0 + vibrance * 0.45 * (0.35 + relative_chroma * 0.65)
+        factor = factor.clamp(0.08, 2.25)
+        c = _apply_chroma_scale(c, lum, factor)
+
+    c = _apply_chroma_scale(c, lum, max(float(params.saturation), 0.0))
     c = torch.clamp(c, min=0.0)
 
     if abs(float(params.hue_shift)) > 0.001:
@@ -196,14 +363,24 @@ def grade_linear(hdr: torch.Tensor, params: GradeParams) -> torch.Tensor:
         )
         c = _hsv_to_rgb(hsv)
 
-    return torch.clamp(c, min=0.0).contiguous()
+    return torch.clamp(c, min=0.0).contiguous(), exposure_info
 
 
-def grade_display(hdr: torch.Tensor, params: GradeParams) -> torch.Tensor:
+def grade_linear(hdr: torch.Tensor, params: GradeParams) -> torch.Tensor:
+    return grade_linear_with_info(hdr, params)[0]
+
+
+def grade_display_with_info(hdr: torch.Tensor, params: GradeParams) -> tuple[torch.Tensor, ExposureInfo]:
     if params.false_color:
-        return _false_color(hdr[..., :3].float()).contiguous()
+        info = ExposureInfo(
+            bias_ev=float(params.exposure),
+            final_ev=float(params.exposure),
+            auto_enabled=bool(params.auto_exposure),
+            auto_locked=bool(params.auto_exposure and params.auto_exposure_lock),
+        )
+        return _false_color(hdr[..., :3].float()).contiguous(), info
 
-    c = grade_linear(hdr, params)
+    c, exposure_info = grade_linear_with_info(hdr, params)
     method = params.tone_mapping
     if method == "Reinhard":
         c = c / (1.0 + c)
@@ -217,4 +394,9 @@ def grade_display(hdr: torch.Tensor, params: GradeParams) -> torch.Tensor:
         raise ValueError(f"Unsupported tone mapping: {method}")
 
     c = _soft_clip(torch.clamp(c, min=0.0), params.soft_clip)
-    return torch.clamp(_linear_to_srgb(torch.clamp(c, 0.0, 1.0)), 0.0, 1.0).contiguous()
+    display = torch.clamp(_linear_to_srgb(torch.clamp(c, 0.0, 1.0)), 0.0, 1.0).contiguous()
+    return display, exposure_info
+
+
+def grade_display(hdr: torch.Tensor, params: GradeParams) -> torch.Tensor:
+    return grade_display_with_info(hdr, params)[0]

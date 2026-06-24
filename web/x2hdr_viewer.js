@@ -1,8 +1,147 @@
 import { app } from "/scripts/app.js";
 
 const TONE_MAPS = ["None", "Reinhard", "ACES Fitted", "AgX", "Hable"];
+const I18N = {
+  zh: {
+    "Exposure": "曝光",
+    "Exposure Bias": "曝光补偿",
+    "Auto Exposure": "自动曝光",
+    "Input Exposure": "输入曝光",
+    "Auto EV": "自动 EV",
+    "Bias EV": "补偿 EV",
+    "Final EV": "最终 EV",
+    "Lock": "锁定",
+    "Unlock": "解锁",
+    "Reset Exposure": "重置曝光",
+    "Tone Map": "色调映射",
+    "Soft Clip": "柔和裁切",
+    "Contrast": "对比度",
+    "Pivot": "中灰点",
+    "Temperature": "色温",
+    "Tint": "色调",
+    "Saturation": "饱和度",
+    "Vibrance": "自然饱和度",
+    "Hue Shift": "色相偏移",
+    "Density": "密度",
+    "Black Lift": "黑位提升",
+    "Tone Bal": "影调平衡",
+    "Shadow R": "阴影 R",
+    "Shadow G": "阴影 G",
+    "Shadow B": "阴影 B",
+    "High R": "高光 R",
+    "High G": "高光 G",
+    "High B": "高光 B",
+    "Lift R": "提升 R",
+    "Lift G": "提升 G",
+    "Lift B": "提升 B",
+    "Gamma R": "伽马 R",
+    "Gamma G": "伽马 G",
+    "Gamma B": "伽马 B",
+    "Gain R": "增益 R",
+    "Gain G": "增益 G",
+    "Gain B": "增益 B",
+    "Offset R": "偏移 R",
+    "Offset G": "偏移 G",
+    "Offset B": "偏移 B",
+    "Shadows": "阴影",
+    "Highlights": "高光",
+    "False Color": "伪色",
+    "Primary": "基础",
+    "Balance": "色彩平衡",
+    "Look": "风格",
+    "Split Tone": "分离色调",
+    "Color Matrix": "颜色矩阵",
+    "Lift": "提升",
+    "Gamma": "伽马",
+    "Gain": "增益",
+    "Offset": "偏移",
+    "Range": "范围",
+    "Open X2HDR color grade": "打开 X2HDR 调色",
+    "X2HDR Color Grade": "X2HDR 调色",
+    "Grade": "调色",
+    "Source": "源图",
+    "Split": "分割",
+    "Prev": "上一帧",
+    "Next": "下一帧",
+    "Fit": "适应",
+    "Reset": "重置",
+    "Cancel": "取消",
+    "Save": "保存",
+    "Save PNG": "保存 PNG",
+    "Save EXR": "保存 EXR",
+    "Export": "导出",
+    "Output Folder": "输出文件夹",
+    "Filename Prefix": "文件名前缀",
+    "Load": "加载",
+    "Delete": "删除",
+    "Select preset": "选择预设",
+    "No presets": "无预设",
+    "built-in": "内置",
+    "Built-in presets cannot be deleted": "内置预设不能删除",
+    "Preset name": "预设名称",
+    "New preset": "新预设",
+    "preset saved: {name}": "已保存预设：{name}",
+    "preset loaded: {name}": "已加载预设：{name}",
+    "preset deleted: {name}": "已删除预设：{name}",
+    "Delete preset \"{name}\"?": "删除预设 “{name}”？",
+    "No HDR source": "无 HDR 源",
+    "Move over image to sample": "将指针移到图像上取样",
+    "Double click to reset": "双击重置",
+    "Split position": "分割位置",
+    "loading source...": "正在加载源...",
+    "source missing": "源缺失",
+    "Run the node once": "先运行节点一次",
+    "rendering high...": "高质量渲染...",
+    "rendering...": "正在渲染...",
+    "live": "实时",
+    "preview failed": "预览失败",
+    "Run X2HDR Color Grade, then open the viewer.": "先运行 X2HDR Color Grade，再打开查看器。",
+    "preview {width}x{height}": "预览 {width}x{height}",
+    "preview pending": "预览待生成",
+    "zoom {pct}%": "缩放 {pct}%",
+    "Outside image": "图像外",
+    "sampling...": "取样中...",
+    "sample failed": "取样失败",
+    "saving {format}...": "正在保存 {format}...",
+    "saved {format}: {path}": "已保存 {format}：{path}",
+    "save failed": "保存失败",
+    "display": "显示",
+    "on": "开",
+    "off": "关",
+    "preset.Camera - Canon warm portrait": "相机 - Canon 暖调人像",
+    "preset.Camera - Nikon vivid landscape": "相机 - Nikon 鲜艳风景",
+    "preset.Camera - Fuji classic chrome": "相机 - Fuji Classic Chrome",
+    "preset.Camera - Fuji velvia color": "相机 - Fuji Velvia 色彩",
+    "preset.Camera - Leica crisp color": "相机 - Leica 清晰色彩",
+    "preset.Camera - Sony clean neutral": "相机 - Sony 干净中性",
+    "preset.Camera - ARRI soft cinema": "相机 - ARRI 柔和电影",
+    "preset.Camera - Hasselblad natural": "相机 - Hasselblad 自然",
+    "preset.Camera - Kodak print warm": "相机 - Kodak 暖调印相",
+    "preset.Camera - Cine bleach bypass": "相机 - 电影漂白旁路",
+  },
+};
+
+function detectLanguage() {
+  const languages = globalThis.navigator?.languages || [globalThis.navigator?.language || ""];
+  return languages.some((language) => String(language).toLowerCase().startsWith("zh")) ? "zh" : "en";
+}
+
+const UI_LANGUAGE = detectLanguage();
+
+function tr(key, values = {}) {
+  const template = I18N[UI_LANGUAGE]?.[key] || key;
+  return template.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? "");
+}
+
+function trPresetName(name) {
+  return tr(`preset.${name}`);
+}
+
 const PARAMS = [
   { name: "exposure", label: "Exposure", section: "Primary", type: "range", min: -10, max: 10, step: 0.1, default: 0 },
+  { name: "auto_exposure", label: "Auto Exposure", section: "Primary", type: "checkbox", default: false },
+  { name: "auto_exposure_lock", label: "Lock", section: "Primary", type: "checkbox", default: false },
+  { name: "auto_exposure_ev", label: "Auto EV", section: "Primary", type: "range", min: -10, max: 10, step: 0.01, default: 0 },
   { name: "tone_map", label: "Tone Map", section: "Primary", type: "select", values: TONE_MAPS, default: "ACES Fitted" },
   { name: "soft_clip", label: "Soft Clip", section: "Primary", type: "range", min: 0, max: 1, step: 0.01, default: 0 },
   { name: "contrast", label: "Contrast", section: "Primary", type: "range", min: 0, max: 4, step: 0.01, default: 1 },
@@ -12,6 +151,24 @@ const PARAMS = [
   { name: "saturation", label: "Saturation", section: "Balance", type: "range", min: 0, max: 3, step: 0.01, default: 1 },
   { name: "vibrance", label: "Vibrance", section: "Balance", type: "range", min: -2, max: 2, step: 0.01, default: 0 },
   { name: "hue_shift", label: "Hue Shift", section: "Balance", type: "range", min: -180, max: 180, step: 1, default: 0 },
+  { name: "density", label: "Density", section: "Look", type: "range", min: -2, max: 2, step: 0.01, default: 0 },
+  { name: "black_lift", label: "Black Lift", section: "Look", type: "range", min: -0.25, max: 0.25, step: 0.001, default: 0 },
+  { name: "tone_balance", label: "Tone Bal", section: "Look", type: "range", min: 0, max: 1, step: 0.01, default: 0.5 },
+  { name: "shadow_tone_r", label: "Shadow R", section: "Split Tone", type: "range", min: -0.25, max: 0.25, step: 0.001, default: 0 },
+  { name: "shadow_tone_g", label: "Shadow G", section: "Split Tone", type: "range", min: -0.25, max: 0.25, step: 0.001, default: 0 },
+  { name: "shadow_tone_b", label: "Shadow B", section: "Split Tone", type: "range", min: -0.25, max: 0.25, step: 0.001, default: 0 },
+  { name: "highlight_tone_r", label: "High R", section: "Split Tone", type: "range", min: -0.25, max: 0.25, step: 0.001, default: 0 },
+  { name: "highlight_tone_g", label: "High G", section: "Split Tone", type: "range", min: -0.25, max: 0.25, step: 0.001, default: 0 },
+  { name: "highlight_tone_b", label: "High B", section: "Split Tone", type: "range", min: -0.25, max: 0.25, step: 0.001, default: 0 },
+  { name: "matrix_rr", label: "R<-R", section: "Color Matrix", type: "range", min: -2, max: 2, step: 0.01, default: 1 },
+  { name: "matrix_rg", label: "R<-G", section: "Color Matrix", type: "range", min: -2, max: 2, step: 0.01, default: 0 },
+  { name: "matrix_rb", label: "R<-B", section: "Color Matrix", type: "range", min: -2, max: 2, step: 0.01, default: 0 },
+  { name: "matrix_gr", label: "G<-R", section: "Color Matrix", type: "range", min: -2, max: 2, step: 0.01, default: 0 },
+  { name: "matrix_gg", label: "G<-G", section: "Color Matrix", type: "range", min: -2, max: 2, step: 0.01, default: 1 },
+  { name: "matrix_gb", label: "G<-B", section: "Color Matrix", type: "range", min: -2, max: 2, step: 0.01, default: 0 },
+  { name: "matrix_br", label: "B<-R", section: "Color Matrix", type: "range", min: -2, max: 2, step: 0.01, default: 0 },
+  { name: "matrix_bg", label: "B<-G", section: "Color Matrix", type: "range", min: -2, max: 2, step: 0.01, default: 0 },
+  { name: "matrix_bb", label: "B<-B", section: "Color Matrix", type: "range", min: -2, max: 2, step: 0.01, default: 1 },
   { name: "lift_r", label: "Lift R", section: "Lift", type: "range", min: -1, max: 1, step: 0.01, default: 0 },
   { name: "lift_g", label: "Lift G", section: "Lift", type: "range", min: -1, max: 1, step: 0.01, default: 0 },
   { name: "lift_b", label: "Lift B", section: "Lift", type: "range", min: -1, max: 1, step: 0.01, default: 0 },
@@ -30,188 +187,318 @@ const PARAMS = [
 ];
 
 const DEFAULTS = Object.fromEntries(PARAMS.map((p) => [p.name, p.default]));
+const PARAM_BY_NAME = new Map(PARAMS.map((p) => [p.name, p]));
 const PARAM_NAMES = new Set(PARAMS.map((p) => p.name));
+const EXPOSURE_PARAM_NAMES = new Set(["auto_exposure", "auto_exposure_lock", "auto_exposure_ev", "exposure"]);
+const NON_PRESET_PARAM_NAMES = new Set(["auto_exposure", "auto_exposure_lock", "auto_exposure_ev", "exposure", "false_color"]);
+const PRESET_PARAM_NAMES = PARAMS.map((p) => p.name).filter((name) => !NON_PRESET_PARAM_NAMES.has(name));
+const PRESET_PARAM_NAME_SET = new Set(PRESET_PARAM_NAMES);
 const PREVIEW_THROTTLE_MS = 96;
 const PRESET_STORAGE_KEY = "x2hdr.colorGradePresets.v1";
-const PRESET_SEED_KEY = "x2hdr.colorGradePresets.seeded.v1";
+const NODE_STATE_KEY = "x2hdr_color_grade_state";
+const NODE_STATE_VERSION = 1;
+const EXPORT_SETTINGS_STORAGE_KEY = "x2hdr.colorGradeExport.v1";
+const FACTORY_PRESET_VERSION = 11;
 const FACTORY_PRESETS = {
   "Camera - Canon warm portrait": {
-    exposure: 0.0,
-    tone_map: "ACES Fitted",
-    soft_clip: 0.14,
-    temperature: 0.14,
-    tint: 0.05,
-    contrast: 1.08,
-    pivot: 0.18,
-    highlights: -0.14,
-    shadows: 0.08,
-    saturation: 1.08,
-    vibrance: 0.18,
-    hue_shift: 1,
-    gain_r: 1.04,
-    gain_g: 1.0,
-    gain_b: 0.97,
-    gamma_r: 1.0,
-    gamma_g: 1.0,
-    gamma_b: 1.02,
-  },
-  "Camera - Nikon vivid landscape": {
-    exposure: -0.1,
-    tone_map: "ACES Fitted",
-    soft_clip: 0.08,
-    temperature: -0.02,
-    tint: 0.02,
-    contrast: 1.2,
-    pivot: 0.2,
-    highlights: -0.08,
-    shadows: -0.02,
-    saturation: 1.22,
-    vibrance: 0.28,
-    hue_shift: -1,
-    gain_r: 0.99,
-    gain_g: 1.03,
-    gain_b: 1.02,
-  },
-  "Camera - Fuji classic chrome": {
-    exposure: -0.15,
-    tone_map: "AgX",
-    soft_clip: 0.18,
-    temperature: 0.06,
-    tint: -0.03,
-    contrast: 1.12,
-    pivot: 0.2,
-    highlights: -0.28,
-    shadows: -0.08,
-    saturation: 0.82,
-    vibrance: -0.08,
-    hue_shift: -4,
-    lift_b: 0.015,
-    gain_r: 1.03,
-    gain_g: 1.0,
-    gain_b: 0.96,
-  },
-  "Camera - Fuji velvia color": {
-    exposure: -0.05,
-    tone_map: "ACES Fitted",
-    soft_clip: 0.1,
-    temperature: 0.02,
-    tint: 0.03,
-    contrast: 1.28,
-    pivot: 0.2,
-    highlights: -0.06,
-    shadows: -0.06,
-    saturation: 1.34,
-    vibrance: 0.34,
-    hue_shift: -2,
-    gain_r: 1.02,
-    gain_g: 1.04,
-    gain_b: 0.98,
-  },
-  "Camera - Leica crisp color": {
-    exposure: -0.05,
-    tone_map: "Hable",
-    soft_clip: 0.08,
-    temperature: 0.05,
-    tint: 0.02,
-    contrast: 1.18,
-    pivot: 0.18,
-    highlights: -0.1,
-    shadows: -0.1,
-    saturation: 1.05,
-    vibrance: 0.12,
-    hue_shift: 2,
-    gain_r: 1.03,
-    gain_g: 1.0,
-    gain_b: 0.98,
-  },
-  "Camera - Sony clean neutral": {
-    exposure: 0.0,
-    tone_map: "ACES Fitted",
-    soft_clip: 0.06,
-    temperature: -0.04,
-    tint: 0.01,
-    contrast: 1.04,
-    pivot: 0.18,
-    highlights: -0.06,
-    shadows: 0.02,
-    saturation: 1.02,
-    vibrance: 0.06,
-    hue_shift: 0,
-    gain_r: 0.99,
-    gain_g: 1.0,
-    gain_b: 1.02,
-  },
-  "Camera - ARRI soft cinema": {
-    exposure: -0.2,
-    tone_map: "AgX",
-    soft_clip: 0.28,
-    temperature: 0.08,
-    tint: 0.02,
-    contrast: 0.92,
-    pivot: 0.18,
-    highlights: -0.34,
-    shadows: 0.12,
-    saturation: 0.94,
-    vibrance: 0.08,
-    hue_shift: 1,
-    lift_r: 0.01,
-    lift_g: 0.008,
-    lift_b: 0.014,
-    gain_r: 1.02,
-    gain_g: 1.0,
-    gain_b: 0.98,
-  },
-  "Camera - Hasselblad natural": {
-    exposure: 0.0,
-    tone_map: "Hable",
-    soft_clip: 0.12,
-    temperature: 0.04,
-    tint: -0.01,
-    contrast: 1.08,
-    pivot: 0.18,
-    highlights: -0.12,
-    shadows: 0.04,
-    saturation: 1.0,
-    vibrance: 0.1,
-    hue_shift: -1,
-    gain_r: 1.02,
-    gain_g: 1.01,
-    gain_b: 0.99,
-  },
-  "Camera - Kodak print warm": {
-    exposure: -0.1,
     tone_map: "Hable",
     soft_clip: 0.22,
     temperature: 0.16,
-    tint: 0.03,
-    contrast: 1.16,
+    tint: 0.035,
+    contrast: 1.04,
     pivot: 0.2,
-    highlights: -0.2,
-    shadows: -0.04,
+    highlights: -0.45,
+    shadows: 0.02,
+    saturation: 1.04,
+    vibrance: 0.14,
+    density: 0.06,
+    black_lift: 0.0,
+    shadow_tone_r: 0.008,
+    shadow_tone_g: 0.002,
+    shadow_tone_b: -0.012,
+    highlight_tone_r: 0.022,
+    highlight_tone_g: 0.01,
+    highlight_tone_b: -0.014,
+    tone_balance: 0.45,
+    matrix_rr: 1.035,
+    matrix_rg: -0.015,
+    matrix_rb: -0.005,
+    matrix_gr: 0.006,
+    matrix_gg: 1.005,
+    matrix_gb: -0.006,
+    matrix_br: -0.01,
+    matrix_bg: -0.012,
+    matrix_bb: 1.03,
+  },
+  "Camera - Nikon vivid landscape": {
+    tone_map: "ACES Fitted",
+    soft_clip: 0.16,
+    temperature: -0.05,
+    tint: 0.01,
+    contrast: 1.14,
+    pivot: 0.22,
+    highlights: -0.35,
+    shadows: -0.08,
     saturation: 1.12,
-    vibrance: 0.16,
-    hue_shift: 3,
-    lift_b: -0.012,
-    gain_r: 1.06,
-    gain_g: 1.0,
-    gain_b: 0.94,
+    vibrance: 0.2,
+    density: 0.08,
+    black_lift: -0.004,
+    shadow_tone_r: -0.006,
+    shadow_tone_g: 0.004,
+    shadow_tone_b: 0.016,
+    highlight_tone_r: 0.002,
+    highlight_tone_g: 0.014,
+    highlight_tone_b: -0.004,
+    tone_balance: 0.52,
+    matrix_rr: 0.99,
+    matrix_rg: 0.005,
+    matrix_rb: -0.008,
+    matrix_gr: -0.018,
+    matrix_gg: 1.06,
+    matrix_gb: -0.006,
+    matrix_br: -0.006,
+    matrix_bg: -0.008,
+    matrix_bb: 1.055,
+  },
+  "Camera - Fuji classic chrome": {
+    tone_map: "AgX",
+    soft_clip: 0.32,
+    temperature: 0.04,
+    tint: -0.035,
+    contrast: 1.06,
+    pivot: 0.23,
+    highlights: -0.65,
+    shadows: -0.12,
+    saturation: 0.72,
+    vibrance: -0.1,
+    density: 0.12,
+    black_lift: 0.0,
+    shadow_tone_r: -0.01,
+    shadow_tone_g: 0.002,
+    shadow_tone_b: 0.016,
+    highlight_tone_r: 0.024,
+    highlight_tone_g: 0.014,
+    highlight_tone_b: -0.018,
+    tone_balance: 0.46,
+    matrix_rr: 1.025,
+    matrix_rg: -0.035,
+    matrix_rb: 0.006,
+    matrix_gr: 0.014,
+    matrix_gg: 0.98,
+    matrix_gb: -0.006,
+    matrix_br: -0.022,
+    matrix_bg: 0.022,
+    matrix_bb: 1.01,
+  },
+  "Camera - Fuji velvia color": {
+    tone_map: "ACES Fitted",
+    soft_clip: 0.18,
+    temperature: 0.02,
+    tint: 0.03,
+    contrast: 1.18,
+    pivot: 0.22,
+    highlights: -0.4,
+    shadows: -0.1,
+    saturation: 1.22,
+    vibrance: 0.22,
+    density: 0.12,
+    black_lift: -0.006,
+    shadow_tone_r: -0.01,
+    shadow_tone_g: 0.006,
+    shadow_tone_b: 0.016,
+    highlight_tone_r: 0.02,
+    highlight_tone_g: 0.018,
+    highlight_tone_b: -0.014,
+    tone_balance: 0.5,
+    matrix_rr: 1.04,
+    matrix_rg: -0.018,
+    matrix_rb: -0.008,
+    matrix_gr: -0.03,
+    matrix_gg: 1.085,
+    matrix_gb: -0.008,
+    matrix_br: -0.012,
+    matrix_bg: -0.018,
+    matrix_bb: 1.08,
+  },
+  "Camera - Leica crisp color": {
+    tone_map: "Hable",
+    soft_clip: 0.18,
+    temperature: 0.04,
+    tint: 0.015,
+    contrast: 1.12,
+    pivot: 0.19,
+    highlights: -0.45,
+    shadows: -0.02,
+    saturation: 1.04,
+    vibrance: 0.1,
+    density: 0.1,
+    black_lift: 0.0,
+    shadow_tone_r: 0.01,
+    shadow_tone_g: -0.004,
+    shadow_tone_b: -0.01,
+    highlight_tone_r: 0.016,
+    highlight_tone_g: 0.008,
+    highlight_tone_b: -0.006,
+    tone_balance: 0.48,
+    matrix_rr: 1.06,
+    matrix_rg: -0.032,
+    matrix_rb: -0.01,
+    matrix_gr: -0.012,
+    matrix_gg: 1.035,
+    matrix_gb: -0.01,
+    matrix_br: -0.012,
+    matrix_bg: -0.014,
+    matrix_bb: 1.04,
+  },
+  "Camera - Sony clean neutral": {
+    tone_map: "ACES Fitted",
+    soft_clip: 0.14,
+    temperature: -0.03,
+    tint: 0.012,
+    contrast: 1.02,
+    pivot: 0.18,
+    highlights: -0.25,
+    shadows: 0.0,
+    saturation: 1.02,
+    vibrance: 0.08,
+    density: 0.02,
+    black_lift: 0.0,
+    shadow_tone_r: -0.004,
+    shadow_tone_g: 0.0,
+    shadow_tone_b: 0.008,
+    highlight_tone_r: -0.002,
+    highlight_tone_g: 0.004,
+    highlight_tone_b: 0.006,
+    tone_balance: 0.5,
+    matrix_rr: 0.99,
+    matrix_rg: 0.002,
+    matrix_rb: 0.006,
+    matrix_gr: -0.004,
+    matrix_gg: 1.015,
+    matrix_gb: -0.002,
+    matrix_br: 0.004,
+    matrix_bg: -0.006,
+    matrix_bb: 1.025,
+  },
+  "Camera - ARRI soft cinema": {
+    tone_map: "AgX",
+    soft_clip: 0.38,
+    temperature: 0.06,
+    tint: 0.02,
+    contrast: 0.9,
+    pivot: 0.18,
+    highlights: -0.75,
+    shadows: -0.08,
+    saturation: 0.88,
+    vibrance: 0.04,
+    density: 0.04,
+    black_lift: 0.0,
+    shadow_tone_r: -0.008,
+    shadow_tone_g: 0.002,
+    shadow_tone_b: 0.014,
+    highlight_tone_r: 0.022,
+    highlight_tone_g: 0.012,
+    highlight_tone_b: -0.012,
+    tone_balance: 0.42,
+    matrix_rr: 1.025,
+    matrix_rg: -0.016,
+    matrix_rb: -0.004,
+    matrix_gr: 0.006,
+    matrix_gg: 1.006,
+    matrix_gb: -0.004,
+    matrix_br: -0.014,
+    matrix_bg: 0.01,
+    matrix_bb: 1.02,
+  },
+  "Camera - Hasselblad natural": {
+    tone_map: "Hable",
+    soft_clip: 0.18,
+    temperature: 0.025,
+    tint: -0.012,
+    contrast: 1.04,
+    pivot: 0.18,
+    highlights: -0.32,
+    shadows: 0.0,
+    saturation: 1.02,
+    vibrance: 0.1,
+    density: 0.06,
+    black_lift: 0.0,
+    shadow_tone_r: -0.004,
+    shadow_tone_g: 0.006,
+    shadow_tone_b: 0.01,
+    highlight_tone_r: 0.01,
+    highlight_tone_g: 0.012,
+    highlight_tone_b: -0.004,
+    tone_balance: 0.5,
+    matrix_rr: 1.025,
+    matrix_rg: -0.012,
+    matrix_rb: -0.004,
+    matrix_gr: -0.004,
+    matrix_gg: 1.025,
+    matrix_gb: -0.006,
+    matrix_br: -0.006,
+    matrix_bg: -0.004,
+    matrix_bb: 1.025,
+  },
+  "Camera - Kodak print warm": {
+    tone_map: "Hable",
+    soft_clip: 0.32,
+    temperature: 0.14,
+    tint: 0.03,
+    contrast: 1.08,
+    pivot: 0.22,
+    highlights: -0.56,
+    shadows: 0.0,
+    saturation: 1.08,
+    vibrance: 0.12,
+    density: 0.16,
+    black_lift: 0.012,
+    shadow_tone_r: 0.014,
+    shadow_tone_g: -0.004,
+    shadow_tone_b: -0.026,
+    highlight_tone_r: 0.034,
+    highlight_tone_g: 0.018,
+    highlight_tone_b: -0.03,
+    tone_balance: 0.44,
+    matrix_rr: 1.06,
+    matrix_rg: -0.03,
+    matrix_rb: -0.014,
+    matrix_gr: 0.01,
+    matrix_gg: 1.012,
+    matrix_gb: -0.014,
+    matrix_br: -0.03,
+    matrix_bg: -0.012,
+    matrix_bb: 1.04,
   },
   "Camera - Cine bleach bypass": {
-    exposure: -0.25,
     tone_map: "AgX",
-    soft_clip: 0.16,
-    temperature: -0.02,
-    tint: -0.02,
-    contrast: 1.35,
-    pivot: 0.22,
-    highlights: -0.18,
+    soft_clip: 0.26,
+    temperature: -0.03,
+    tint: -0.015,
+    contrast: 1.18,
+    pivot: 0.24,
+    highlights: -0.55,
     shadows: -0.18,
-    saturation: 0.62,
-    vibrance: -0.2,
-    hue_shift: -3,
-    gain_r: 1.0,
-    gain_g: 1.01,
-    gain_b: 1.03,
+    saturation: 0.54,
+    vibrance: -0.26,
+    density: 0.22,
+    black_lift: -0.01,
+    shadow_tone_r: -0.01,
+    shadow_tone_g: 0.004,
+    shadow_tone_b: 0.024,
+    highlight_tone_r: 0.01,
+    highlight_tone_g: 0.012,
+    highlight_tone_b: -0.006,
+    tone_balance: 0.54,
+    matrix_rr: 1.02,
+    matrix_rg: -0.01,
+    matrix_rb: 0.0,
+    matrix_gr: -0.01,
+    matrix_gg: 1.02,
+    matrix_gb: -0.004,
+    matrix_br: -0.004,
+    matrix_bg: -0.01,
+    matrix_bb: 1.04,
   },
 };
 const state = {
@@ -229,6 +516,17 @@ const state = {
   frame: null,
   presetSelect: null,
   presetDeleteButton: null,
+  activePresetName: "",
+  activePresetDirty: false,
+  snapshotPresetName: "",
+  snapshotPresetDirty: false,
+  exposureReadout: null,
+  exposureLockButton: null,
+  exposureAutoCheckbox: null,
+  exposureBiasRange: null,
+  exposureBiasNumber: null,
+  exportFolderInput: null,
+  exportPrefixInput: null,
   compare: null,
   currentNode: null,
   cacheId: "",
@@ -241,6 +539,7 @@ const state = {
   compareImage: null,
   compareKey: "",
   previewMeta: { width: 0, height: 0, previewWidth: 0, previewHeight: 0, frames: 1 },
+  exposureMeta: { autoEv: 0, biasEv: 0, finalEv: 0, auto: false, locked: false },
   renderTimer: 0,
   renderInFlight: false,
   renderQueued: false,
@@ -256,6 +555,7 @@ const state = {
   lastCompareUrl: "",
   activeControl: false,
   refineTimer: 0,
+  exportSettings: { folder: "x2hdr", prefix: "x2hdr_grade" },
 };
 
 function insertStyles() {
@@ -269,10 +569,21 @@ function insertStyles() {
     .x2hdr-grade-title{font-size:13px;font-weight:700;color:#f0f0f0;margin-right:8px}
     .x2hdr-grade-stage{position:relative;overflow:hidden;background:#050607;cursor:crosshair}
     .x2hdr-grade-canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
-    .x2hdr-grade-side{display:grid;grid-template-rows:auto auto auto minmax(0,1fr);border-left:1px solid #2c3138;background:#14171b;min-width:0}
+    .x2hdr-grade-side{display:grid;grid-template-rows:auto auto auto auto auto minmax(0,1fr);border-left:1px solid #2c3138;background:#14171b;min-width:0}
     .x2hdr-grade-readout{display:grid;grid-template-columns:1fr;gap:6px;padding:10px;border-bottom:1px solid #2c3138;background:#111419;color:#aeb7c2;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;line-height:1.35}
+    .x2hdr-grade-exposure{display:grid;gap:7px;padding:9px 10px;border-bottom:1px solid #2c3138;background:#13181d}
+    .x2hdr-grade-exposure-head{display:flex;align-items:center;gap:8px;color:#e3e6e8;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+    .x2hdr-grade-toggle{display:flex;align-items:center;gap:5px;margin-left:auto;color:#cbd1d8;font-size:12px;font-weight:400;text-transform:none;letter-spacing:0}
+    .x2hdr-grade-toggle input{width:16px;height:16px;accent-color:#5fb8a8}
+    .x2hdr-grade-evrow{display:grid;grid-template-columns:86px minmax(0,1fr) 58px;gap:8px;align-items:center;color:#cbd1d8}
+    .x2hdr-grade-evrow input[type="range"]{width:100%;accent-color:#5fb8a8}
+    .x2hdr-grade-evrow input[type="number"]{width:100%;box-sizing:border-box;background:#0c0f12;color:#dfe5ea;border:1px solid #39404a;border-radius:4px;padding:4px 5px;font:12px ui-monospace,SFMono-Regular,Consolas,monospace}
+    .x2hdr-grade-evreadout{color:#aeb7c2;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
     .x2hdr-grade-presets{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:6px;padding:8px 10px;border-bottom:1px solid #2c3138;background:#12161a}
     .x2hdr-grade-presets select{min-width:0;width:100%;box-sizing:border-box;background:#0c0f12;color:#dfe5ea;border:1px solid #39404a;border-radius:4px;padding:4px 5px;font:12px system-ui,-apple-system,"Segoe UI",sans-serif}
+    .x2hdr-grade-export{display:grid;grid-template-columns:1fr 1fr auto auto;gap:6px;align-items:end;padding:8px 10px;border-bottom:1px solid #2c3138;background:#11151a}
+    .x2hdr-grade-field{display:grid;gap:3px;min-width:0;color:#aeb7c2;font-size:11px}
+    .x2hdr-grade-field input{min-width:0;width:100%;box-sizing:border-box;background:#0c0f12;color:#dfe5ea;border:1px solid #39404a;border-radius:4px;padding:5px 6px;font:12px ui-monospace,SFMono-Regular,Consolas,monospace}
     .x2hdr-grade-hist{width:100%;height:96px;background:#070809;border-bottom:1px solid #2c3138}
     .x2hdr-grade-controls{overflow:auto;padding:10px 12px 16px;display:grid;gap:12px;align-content:start}
     .x2hdr-grade-section{display:grid;gap:7px}
@@ -312,6 +623,28 @@ function readNodeParams(node) {
     params[param.name] = widget?.value ?? param.default;
   }
   return normalizeParams(params);
+}
+
+function readNodeState(node) {
+  const stored = node?.properties?.[NODE_STATE_KEY];
+  if (!stored || typeof stored !== "object" || Array.isArray(stored)) return {};
+  return {
+    activePresetName: typeof stored.activePresetName === "string" ? stored.activePresetName : "",
+    activePresetDirty: stored.activePresetDirty === true,
+  };
+}
+
+function writeNodeState(node, patch) {
+  if (!node) return;
+  node.properties ||= {};
+  const current = readNodeState(node);
+  node.properties[NODE_STATE_KEY] = {
+    version: NODE_STATE_VERSION,
+    ...current,
+    ...patch,
+  };
+  node.setDirtyCanvas?.(true, true);
+  app.graph?.setDirtyCanvas?.(true, true);
 }
 
 function writeNodeParams(node, params) {
@@ -362,9 +695,29 @@ function writePresets(presets) {
   localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(presets));
 }
 
+function readExportSettings() {
+  const defaults = { folder: "x2hdr", prefix: "x2hdr_grade" };
+  try {
+    const data = JSON.parse(localStorage.getItem(EXPORT_SETTINGS_STORAGE_KEY) || "{}");
+    return {
+      folder: String(data?.folder ?? defaults.folder),
+      prefix: String(data?.prefix ?? defaults.prefix) || defaults.prefix,
+    };
+  } catch (_) {
+    return defaults;
+  }
+}
+
+function writeExportSettings() {
+  const folder = String(state.exportFolderInput?.value ?? state.exportSettings.folder ?? "").trim();
+  const prefix = String(state.exportPrefixInput?.value ?? state.exportSettings.prefix ?? "").trim() || "x2hdr_grade";
+  state.exportSettings = { folder, prefix };
+  localStorage.setItem(EXPORT_SETTINGS_STORAGE_KEY, JSON.stringify(state.exportSettings));
+}
+
 function sanitizePresetParams(params) {
   const clean = {};
-  for (const param of PARAMS) clean[param.name] = params[param.name] ?? param.default;
+  for (const name of PRESET_PARAM_NAMES) clean[name] = params[name] ?? DEFAULTS[name];
   return clean;
 }
 
@@ -372,16 +725,17 @@ function ensureFactoryPresets() {
   const presets = readPresets();
   let changed = false;
   for (const [name, params] of Object.entries(FACTORY_PRESETS)) {
-    if (presets[name]) continue;
+    if (presets[name] && presets[name].factory !== true) continue;
+    if (presets[name]?.factory_version === FACTORY_PRESET_VERSION) continue;
     presets[name] = {
       factory: true,
+      factory_version: FACTORY_PRESET_VERSION,
       params: sanitizePresetParams(normalizeParams(params)),
       updated_at: "factory",
     };
     changed = true;
   }
   if (changed) writePresets(presets);
-  localStorage.setItem(PRESET_SEED_KEY, "1");
 }
 
 function updatePresetButtons() {
@@ -390,7 +744,75 @@ function updatePresetButtons() {
   const preset = name ? readPresets()[name] : null;
   const canDelete = !!preset && preset.factory !== true;
   state.presetDeleteButton.disabled = !canDelete;
-  state.presetDeleteButton.title = preset?.factory ? "Built-in presets cannot be deleted" : "";
+  state.presetDeleteButton.title = preset?.factory ? tr("Built-in presets cannot be deleted") : "";
+}
+
+function setActivePreset(name, dirty = false) {
+  const presets = readPresets();
+  const active = name && presets[name] ? name : "";
+  state.activePresetName = active;
+  state.activePresetDirty = active ? !!dirty : false;
+  refreshActivePresetDisplay();
+  updatePresetButtons();
+}
+
+function refreshActivePresetDisplay() {
+  if (state.presetSelect) {
+    state.presetSelect.value = state.activePresetName;
+    state.presetSelect.title = state.activePresetName
+      ? tr("preset loaded: {name}", { name: `${presetDisplayName(state.activePresetName)}${state.activePresetDirty ? " *" : ""}` })
+      : "";
+    for (const option of state.presetSelect.options || []) {
+      const name = option.value;
+      if (!name) continue;
+      option.textContent = presetOptionLabel(name, name === state.activePresetName && state.activePresetDirty);
+    }
+  }
+}
+
+function updateActivePresetDirtyForEdit(paramName) {
+  if (!state.activePresetName || !PRESET_PARAM_NAME_SET.has(paramName)) return;
+  const dirty = !presetMatchesWorking(state.activePresetName);
+  if (dirty === state.activePresetDirty) return;
+  setActivePreset(state.activePresetName, dirty);
+}
+
+function writeActivePresetState() {
+  if (!state.currentNode) return;
+  writeNodeState(state.currentNode, {
+    activePresetName: state.activePresetName || "",
+    activePresetDirty: !!state.activePresetName && !!state.activePresetDirty,
+  });
+}
+
+function presetDisplayName(name) {
+  const preset = readPresets()[name];
+  return preset?.factory ? trPresetName(name) : name;
+}
+
+function presetOptionLabel(name, dirty = false) {
+  const preset = readPresets()[name];
+  const displayName = preset?.factory ? trPresetName(name) : name;
+  const suffixes = [];
+  if (preset?.factory) suffixes.push(tr("built-in"));
+  if (dirty) suffixes.push("*");
+  return suffixes.length ? `${displayName} [${suffixes.join(" | ")}]` : displayName;
+}
+
+function valuesEqualForPreset(paramName, a, b) {
+  const param = PARAM_BY_NAME.get(paramName);
+  if (param?.type === "select") return String(a ?? param.default) === String(b ?? param.default);
+  if (param?.type === "checkbox") return !!a === !!b;
+  return Math.abs(Number(a ?? param?.default ?? 0) - Number(b ?? param?.default ?? 0)) < 1e-6;
+}
+
+function presetMatchesWorking(name) {
+  const preset = readPresets()[name];
+  if (!preset?.params) return false;
+  const clean = sanitizePresetParams(state.working);
+  return PRESET_PARAM_NAMES.every((paramName) =>
+    valuesEqualForPreset(paramName, clean[paramName], preset.params[paramName] ?? DEFAULTS[paramName]),
+  );
 }
 
 function refreshPresetSelect(selected = "") {
@@ -401,21 +823,38 @@ function refreshPresetSelect(selected = "") {
   state.presetSelect.textContent = "";
   const empty = document.createElement("option");
   empty.value = "";
-  empty.textContent = names.length ? "Select preset" : "No presets";
+  empty.textContent = names.length ? tr("Select preset") : tr("No presets");
   state.presetSelect.append(empty);
   for (const name of names) {
     const option = document.createElement("option");
     option.value = name;
-    option.textContent = presets[name]?.factory ? `${name} [built-in]` : name;
+    option.textContent = presetOptionLabel(name, name === state.activePresetName && state.activePresetDirty);
     state.presetSelect.append(option);
   }
   state.presetSelect.value = names.includes(selected) ? selected : "";
+  state.activePresetName = state.presetSelect.value || "";
+  if (!state.activePresetName) state.activePresetDirty = false;
+  refreshActivePresetDisplay();
   updatePresetButtons();
+}
+
+function restoreActivePresetState(node) {
+  const nodeState = readNodeState(node);
+  state.snapshotPresetName = nodeState.activePresetName || "";
+  state.snapshotPresetDirty = nodeState.activePresetDirty === true;
+  state.activePresetDirty = state.snapshotPresetDirty;
+  refreshPresetSelect(state.snapshotPresetName);
+  if (state.activePresetName) {
+    const dirty = state.snapshotPresetDirty || !presetMatchesWorking(state.activePresetName);
+    setActivePreset(state.activePresetName, dirty);
+  }
+  state.snapshotPresetName = state.activePresetName;
+  state.snapshotPresetDirty = state.activePresetDirty;
 }
 
 function savePreset() {
   const current = state.presetSelect?.value || "";
-  const name = prompt("Preset name", current || "New preset");
+  const name = prompt(tr("Preset name"), current || tr("New preset"));
   if (!name) return;
   const trimmed = name.trim();
   if (!trimmed) return;
@@ -426,7 +865,8 @@ function savePreset() {
   };
   writePresets(presets);
   refreshPresetSelect(trimmed);
-  setStatus(`preset saved: ${trimmed}`);
+  setActivePreset(trimmed, false);
+  setStatus(tr("preset saved: {name}", { name: trimmed }));
 }
 
 function loadPreset() {
@@ -434,10 +874,14 @@ function loadPreset() {
   if (!name) return;
   const preset = readPresets()[name];
   if (!preset?.params) return;
-  state.working = normalizeParams(preset.params);
+  const preserved = {};
+  for (const paramName of NON_PRESET_PARAM_NAMES) preserved[paramName] = state.working[paramName];
+  state.working = normalizeParams({ ...preset.params, ...preserved });
+  updateExposurePanel();
   buildControls();
   schedulePreview(0, true);
-  setStatus(`preset loaded: ${name}`);
+  setActivePreset(name, false);
+  setStatus(tr("preset loaded: {name}", { name: preset.factory ? trPresetName(name) : name }));
 }
 
 function deletePreset() {
@@ -445,19 +889,27 @@ function deletePreset() {
   if (!name) return;
   const presets = readPresets();
   if (presets[name]?.factory) {
-    setStatus("built-in presets cannot be deleted");
+    setStatus(tr("Built-in presets cannot be deleted"));
     updatePresetButtons();
     return;
   }
-  if (!confirm(`Delete preset "${name}"?`)) return;
+  if (!confirm(tr("Delete preset \"{name}\"?", { name }))) return;
+  const deletingActivePreset = state.activePresetName === name;
   delete presets[name];
   writePresets(presets);
   refreshPresetSelect();
-  setStatus(`preset deleted: ${name}`);
+  if (deletingActivePreset) setActivePreset("");
+  setStatus(tr("preset deleted: {name}", { name }));
 }
 
 function neutralParams(params) {
-  return { ...DEFAULTS, tone_map: params.tone_map ?? DEFAULTS.tone_map, false_color: false };
+  return {
+    ...DEFAULTS,
+    auto_exposure: params.auto_exposure ?? DEFAULTS.auto_exposure,
+    exposure: params.exposure ?? DEFAULTS.exposure,
+    tone_map: params.tone_map ?? DEFAULTS.tone_map,
+    false_color: false,
+  };
 }
 
 function button(label, onClick, className = "") {
@@ -467,6 +919,132 @@ function button(label, onClick, className = "") {
   el.textContent = label;
   el.onclick = onClick;
   return el;
+}
+
+function exportField(label, value) {
+  const field = document.createElement("label");
+  field.className = "x2hdr-grade-field";
+  const text = document.createElement("span");
+  text.textContent = label;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = value;
+  input.oninput = writeExportSettings;
+  field.append(text, input);
+  return { field, input };
+}
+
+function buildExposurePanel() {
+  const panel = document.createElement("div");
+  panel.className = "x2hdr-grade-exposure";
+
+  const head = document.createElement("div");
+  head.className = "x2hdr-grade-exposure-head";
+  const title = document.createElement("span");
+  title.textContent = tr("Input Exposure");
+  const toggle = document.createElement("label");
+  toggle.className = "x2hdr-grade-toggle";
+  state.exposureAutoCheckbox = document.createElement("input");
+  state.exposureAutoCheckbox.type = "checkbox";
+  state.exposureAutoCheckbox.checked = !!state.working.auto_exposure;
+  state.exposureAutoCheckbox.oninput = () => {
+    state.working.auto_exposure = state.exposureAutoCheckbox.checked;
+    if (!state.working.auto_exposure) state.working.auto_exposure_lock = false;
+    updateExposurePanel();
+    schedulePreview(0, true);
+  };
+  const toggleText = document.createElement("span");
+  toggleText.textContent = tr("Auto Exposure");
+  toggle.append(state.exposureAutoCheckbox, toggleText);
+  head.append(title, toggle);
+
+  const biasRow = document.createElement("label");
+  biasRow.className = "x2hdr-grade-evrow";
+  const biasLabel = document.createElement("span");
+  biasLabel.textContent = tr("Exposure Bias");
+  state.exposureBiasRange = document.createElement("input");
+  state.exposureBiasRange.type = "range";
+  state.exposureBiasRange.min = "-10";
+  state.exposureBiasRange.max = "10";
+  state.exposureBiasRange.step = "0.1";
+  state.exposureBiasNumber = document.createElement("input");
+  state.exposureBiasNumber.type = "number";
+  state.exposureBiasNumber.min = "-10";
+  state.exposureBiasNumber.max = "10";
+  state.exposureBiasNumber.step = "0.1";
+  const setBias = (value, highQuality = false) => {
+    const next = clamp(Number(value), -10, 10);
+    state.working.exposure = next;
+    state.exposureBiasRange.value = String(next);
+    state.exposureBiasNumber.value = formatValue(next, 0.1);
+    updateExposurePanel();
+    schedulePreview(0, highQuality);
+  };
+  state.exposureBiasRange.oninput = () => setBias(state.exposureBiasRange.value, false);
+  state.exposureBiasRange.onpointerdown = () => {
+    state.activeControl = true;
+  };
+  state.exposureBiasRange.onpointerup = () => finishInteractiveControl();
+  state.exposureBiasRange.onpointercancel = () => finishInteractiveControl();
+  state.exposureBiasRange.onchange = () => finishInteractiveControl();
+  state.exposureBiasNumber.onchange = () => setBias(state.exposureBiasNumber.value, true);
+  biasRow.append(biasLabel, state.exposureBiasRange, state.exposureBiasNumber);
+
+  const actions = document.createElement("div");
+  actions.style.cssText = "display:flex;gap:6px;align-items:center";
+  state.exposureReadout = document.createElement("div");
+  state.exposureReadout.className = "x2hdr-grade-evreadout";
+  state.exposureReadout.style.flex = "1";
+  state.exposureLockButton = button(tr("Lock"), toggleExposureLock);
+  actions.append(state.exposureReadout, state.exposureLockButton, button(tr("Reset Exposure"), resetExposureControls));
+
+  panel.append(head, biasRow, actions);
+  updateExposurePanel();
+  return panel;
+}
+
+function updateExposurePanel() {
+  if (state.exposureAutoCheckbox) state.exposureAutoCheckbox.checked = !!state.working.auto_exposure;
+  if (state.exposureBiasRange) state.exposureBiasRange.value = String(state.working.exposure ?? 0);
+  if (state.exposureBiasNumber) state.exposureBiasNumber.value = formatValue(state.working.exposure ?? 0, 0.1);
+  if (state.exposureLockButton) {
+    state.exposureLockButton.textContent = state.working.auto_exposure_lock ? tr("Unlock") : tr("Lock");
+    state.exposureLockButton.disabled = !state.working.auto_exposure;
+  }
+  if (state.exposureReadout) {
+    const meta = state.exposureMeta;
+    const autoText = state.working.auto_exposure ? signedEv(meta.autoEv) : signedEv(0);
+    const lockText = state.working.auto_exposure_lock ? ` ${tr("Lock")}` : "";
+    state.exposureReadout.textContent = `${tr("Auto EV")} ${autoText}${lockText} | ${tr("Bias EV")} ${signedEv(state.working.exposure ?? 0)} | ${tr("Final EV")} ${signedEv(meta.finalEv)}`;
+  }
+}
+
+function toggleExposureLock() {
+  if (!state.working.auto_exposure) return;
+  if (state.working.auto_exposure_lock) {
+    state.working.auto_exposure_lock = false;
+  } else {
+    state.working.auto_exposure_lock = true;
+    state.working.auto_exposure_ev = Number(state.exposureMeta.autoEv || 0);
+  }
+  updateExposurePanel();
+  schedulePreview(0, true);
+}
+
+function resetExposureControls() {
+  state.working.auto_exposure = false;
+  state.working.auto_exposure_lock = false;
+  state.working.auto_exposure_ev = 0;
+  state.working.exposure = 0;
+  state.exposureMeta = { autoEv: 0, biasEv: 0, finalEv: 0, auto: false, locked: false };
+  updateExposurePanel();
+  schedulePreview(0, true);
+}
+
+function signedEv(value) {
+  const number = Number(value || 0);
+  const formatted = number.toFixed(2);
+  return number > 0 ? `+${formatted}` : formatted;
 }
 
 function setStatus(text) {
@@ -486,16 +1064,16 @@ function buildModal() {
 
   const title = document.createElement("div");
   title.className = "x2hdr-grade-title";
-  title.textContent = "X2HDR Color Grade";
+  title.textContent = tr("X2HDR Color Grade");
 
   state.frame = document.createElement("span");
   state.frame.className = "x2hdr-grade-status";
 
   const modeGroup = document.createElement("span");
   modeGroup.style.cssText = "display:flex;gap:4px";
-  const gradedBtn = button("Grade", () => setCompareMode("graded"), "active");
-  const sourceBtn = button("Source", () => setCompareMode("source"));
-  const splitBtn = button("Split", () => setCompareMode("split"));
+  const gradedBtn = button(tr("Grade"), () => setCompareMode("graded"), "active");
+  const sourceBtn = button(tr("Source"), () => setCompareMode("source"));
+  const splitBtn = button(tr("Split"), () => setCompareMode("split"));
   state.compare = { gradedBtn, sourceBtn, splitBtn };
   modeGroup.append(gradedBtn, sourceBtn, splitBtn);
 
@@ -505,7 +1083,7 @@ function buildModal() {
   splitSlider.max = "0.95";
   splitSlider.step = "0.01";
   splitSlider.value = String(state.split);
-  splitSlider.title = "Split position";
+  splitSlider.title = tr("Split position");
   splitSlider.style.cssText = "width:100px;accent-color:#5fb8a8";
   splitSlider.oninput = () => {
     state.split = Number(splitSlider.value);
@@ -518,10 +1096,10 @@ function buildModal() {
 
   toolbar.append(
     title,
-    button("Prev", () => setFrame(state.frameIndex - 1)),
+    button(tr("Prev"), () => setFrame(state.frameIndex - 1)),
     state.frame,
-    button("Next", () => setFrame(state.frameIndex + 1)),
-    button("Fit", () => fitImage(true)),
+    button(tr("Next"), () => setFrame(state.frameIndex + 1)),
+    button(tr("Fit"), () => fitImage(true)),
     button("1:1", () => setZoom(1)),
     button("-", () => zoomBy(0.8)),
     button("+", () => zoomBy(1.25)),
@@ -529,9 +1107,9 @@ function buildModal() {
     splitSlider,
     spanSpacer(),
     state.status,
-    button("Reset", resetControls),
-    button("Cancel", closeModal),
-    button("Save", saveAndClose, "primary"),
+    button(tr("Reset"), resetControls),
+    button(tr("Cancel"), closeModal),
+    button(tr("Save"), saveAndClose, "primary"),
   );
 
   state.stage = document.createElement("div");
@@ -548,9 +1126,11 @@ function buildModal() {
   readout.className = "x2hdr-grade-readout";
   state.info = document.createElement("div");
   state.sample = document.createElement("div");
-  state.info.textContent = "No HDR source";
-  state.sample.textContent = "Move over image to sample";
+  state.info.textContent = tr("No HDR source");
+  state.sample.textContent = tr("Move over image to sample");
   readout.append(state.info, state.sample);
+
+  const exposurePanel = buildExposurePanel();
 
   const presets = document.createElement("div");
   presets.className = "x2hdr-grade-presets";
@@ -559,12 +1139,26 @@ function buildModal() {
     updatePresetButtons();
     loadPreset();
   };
-  state.presetDeleteButton = button("Delete", deletePreset);
+  state.presetDeleteButton = button(tr("Delete"), deletePreset);
   presets.append(
     state.presetSelect,
-    button("Load", loadPreset),
-    button("Save", savePreset),
+    button(tr("Load"), loadPreset),
+    button(tr("Save"), savePreset),
     state.presetDeleteButton,
+  );
+
+  state.exportSettings = readExportSettings();
+  const exportPanel = document.createElement("div");
+  exportPanel.className = "x2hdr-grade-export";
+  const exportFolder = exportField(tr("Output Folder"), state.exportSettings.folder);
+  const exportPrefix = exportField(tr("Filename Prefix"), state.exportSettings.prefix);
+  state.exportFolderInput = exportFolder.input;
+  state.exportPrefixInput = exportPrefix.input;
+  exportPanel.append(
+    exportFolder.field,
+    exportPrefix.field,
+    button(tr("Save PNG"), () => saveCurrentFrame("png")),
+    button(tr("Save EXR"), () => saveCurrentFrame("exr")),
   );
 
   state.histogram = document.createElement("canvas");
@@ -574,7 +1168,7 @@ function buildModal() {
   state.controls = document.createElement("div");
   state.controls.className = "x2hdr-grade-controls";
 
-  side.append(readout, presets, state.histogram, state.controls);
+  side.append(readout, exposurePanel, presets, exportPanel, state.histogram, state.controls);
   shell.append(toolbar, state.stage, side);
   modal.append(shell);
   document.body.append(modal);
@@ -615,6 +1209,7 @@ function buildControls() {
   state.controls.textContent = "";
   const sections = new Map();
   for (const param of PARAMS) {
+    if (EXPOSURE_PARAM_NAMES.has(param.name)) continue;
     if (!sections.has(param.section)) sections.set(param.section, []);
     sections.get(param.section).push(param);
   }
@@ -624,7 +1219,7 @@ function buildControls() {
     group.className = "x2hdr-grade-section";
     const heading = document.createElement("div");
     heading.className = "x2hdr-grade-section-title";
-    heading.textContent = section;
+    heading.textContent = tr(section);
     group.append(heading);
     for (const param of params) group.append(buildControlRow(param));
     state.controls.append(group);
@@ -634,16 +1229,17 @@ function buildControls() {
 function buildControlRow(param) {
   const row = document.createElement("label");
   row.className = "x2hdr-grade-row";
-  row.title = "Double click to reset";
+  row.title = tr("Double click to reset");
   row.ondblclick = (event) => {
     event.preventDefault();
     state.working[param.name] = param.default;
+    updateActivePresetDirtyForEdit(param.name);
     buildControls();
     schedulePreview(0, true);
   };
 
   const label = document.createElement("span");
-  label.textContent = param.label;
+  label.textContent = tr(param.label);
 
   let input;
   let readout = document.createElement("span");
@@ -663,7 +1259,7 @@ function buildControlRow(param) {
     input = document.createElement("input");
     input.type = "checkbox";
     input.checked = !!state.working[param.name];
-    readout.textContent = input.checked ? "on" : "off";
+    readout.textContent = input.checked ? tr("on") : tr("off");
   } else {
     input = document.createElement("input");
     input.type = "range";
@@ -683,6 +1279,7 @@ function buildControlRow(param) {
       state.working[param.name] = next;
       input.value = String(next);
       number.value = formatValue(next, param.step);
+      updateActivePresetDirtyForEdit(param.name);
       schedulePreview(0, true);
     };
     readout = number;
@@ -691,13 +1288,14 @@ function buildControlRow(param) {
   input.oninput = () => {
     if (param.type === "checkbox") {
       state.working[param.name] = input.checked;
-      readout.textContent = input.checked ? "on" : "off";
+      readout.textContent = input.checked ? tr("on") : tr("off");
     } else if (param.type === "select") {
       state.working[param.name] = input.value;
     } else {
       state.working[param.name] = Number(input.value);
       readout.value = formatValue(input.value, param.step);
     }
+    updateActivePresetDirtyForEdit(param.name);
     schedulePreview(0, false);
   };
 
@@ -743,11 +1341,12 @@ async function openModal(node) {
   state.cacheInfo = node.x2hdrViewer || null;
   state.cacheId = String(state.cacheInfo?.cache_id || state.cacheInfo?.node_id || node.id);
   state.modal.style.display = "flex";
-  refreshPresetSelect();
+  restoreActivePresetState(node);
+  updateExposurePanel();
   buildControls();
   resizeCanvas();
   setCompareMode(state.compareMode, false);
-  setStatus("loading source...");
+  setStatus(tr("loading source..."));
   updateReadout();
 
   await refreshInfo();
@@ -766,12 +1365,49 @@ function closeModal() {
 }
 
 function saveAndClose() {
-  if (state.currentNode) writeNodeParams(state.currentNode, state.working);
+  if (state.currentNode) {
+    writeNodeParams(state.currentNode, state.working);
+    writeActivePresetState();
+  }
   closeModal();
+}
+
+async function saveCurrentFrame(format) {
+  if (!state.currentNode || !state.cacheId) return;
+  if (state.currentNode) {
+    writeNodeParams(state.currentNode, state.working);
+    writeActivePresetState();
+  }
+  writeExportSettings();
+  const normalizedFormat = String(format || "").toLowerCase();
+  const label = normalizedFormat.toUpperCase();
+  setStatus(tr("saving {format}...", { format: label }));
+  try {
+    const response = await fetch("/x2hdr/grade/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cache_id: state.cacheId,
+        node_id: String(state.currentNode?.id || ""),
+        frame: state.frameIndex,
+        format: normalizedFormat,
+        save_subfolder: state.exportSettings.folder,
+        filename_prefix: state.exportSettings.prefix,
+        params: state.working,
+      }),
+    });
+    if (!response.ok) throw new Error(await responseText(response));
+    const data = await response.json();
+    setStatus(tr("saved {format}: {path}", { format: label, path: data.path || data.filename || "" }));
+  } catch (error) {
+    setStatus(error.message || tr("save failed"));
+  }
 }
 
 function resetControls() {
   state.working = { ...state.snapshot };
+  setActivePreset(state.snapshotPresetName, state.snapshotPresetDirty);
+  updateExposurePanel();
   buildControls();
   schedulePreview(0, true);
 }
@@ -826,8 +1462,8 @@ async function refreshInfo() {
     if (state.currentNode) state.currentNode.x2hdrViewer = info;
     updateReadout();
   } catch (error) {
-    setStatus(error.message || "source missing");
-    updateReadout(error.message || "Run the node once");
+    setStatus(error.message || tr("source missing"));
+    updateReadout(error.message || tr("Run the node once"));
   }
 }
 
@@ -852,14 +1488,23 @@ async function renderPreview(highQuality = false) {
   state.queuedHighQuality = false;
   state.lastRenderStarted = performance.now();
   const serial = ++state.serial;
-  setStatus(highQuality ? "rendering high..." : "rendering...");
+  setStatus(highQuality ? tr("rendering high...") : tr("rendering..."));
   updateReadout();
 
   try {
     const maxSize = previewMaxSize(highQuality);
     const image = await requestPreview(state.working, false, maxSize);
     let compareImage = state.compareImage;
-    const compareKey = `${state.cacheId}:${state.frameIndex}:${maxSize}:${state.working.tone_map || ""}`;
+    const compareKey = [
+      state.cacheId,
+      state.frameIndex,
+      maxSize,
+      state.working.tone_map || "",
+      state.working.auto_exposure ? 1 : 0,
+      state.working.auto_exposure_lock ? 1 : 0,
+      Number(state.working.auto_exposure_ev || 0).toFixed(4),
+      Number(state.working.exposure || 0).toFixed(4),
+    ].join(":");
     if (state.compareMode !== "graded") {
       if (!state.compareImage || state.compareKey !== compareKey) {
         compareImage = await requestPreview(neutralParams(state.working), true, maxSize);
@@ -882,10 +1527,10 @@ async function renderPreview(highQuality = false) {
     drawCanvas();
     drawHistogram();
     updateReadout();
-    setStatus("live");
+    setStatus(tr("live"));
   } catch (error) {
     if (serial !== state.serial) return;
-    setStatus(error.message || "preview failed");
+    setStatus(error.message || tr("preview failed"));
     drawCanvas();
   } finally {
     state.renderInFlight = false;
@@ -920,6 +1565,17 @@ async function requestPreview(params, compare = false, maxSize = previewMaxSize(
   const frames = Number(response.headers.get("X-X2HDR-Frames") || 1);
   if (!compare) {
     state.previewMeta = { width, height, previewWidth, previewHeight, frames };
+    state.exposureMeta = {
+      autoEv: Number(response.headers.get("X-X2HDR-Auto-EV") || 0),
+      biasEv: Number(response.headers.get("X-X2HDR-Bias-EV") || 0),
+      finalEv: Number(response.headers.get("X-X2HDR-Final-EV") || 0),
+      auto: response.headers.get("X-X2HDR-Auto-Exposure") === "1",
+      locked: response.headers.get("X-X2HDR-Auto-Locked") === "1",
+    };
+    if (state.working.auto_exposure && !state.working.auto_exposure_lock) {
+      state.working.auto_exposure_ev = state.exposureMeta.autoEv;
+    }
+    updateExposurePanel();
     if (state.cacheInfo) {
       state.cacheInfo.width = width || state.cacheInfo.width;
       state.cacheInfo.height = height || state.cacheInfo.height;
@@ -1018,7 +1674,7 @@ function drawCanvas() {
     ctx.fillStyle = "#8f98a3";
     ctx.font = `${13 * (window.devicePixelRatio || 1)}px system-ui`;
     ctx.textAlign = "center";
-    ctx.fillText("Run X2HDR Color Grade, then open the viewer.", w / 2, h / 2);
+    ctx.fillText(tr("Run X2HDR Color Grade, then open the viewer."), w / 2, h / 2);
     return;
   }
 
@@ -1131,9 +1787,13 @@ function updateReadout(error = "") {
   const width = Number(info.width || state.previewMeta.width || 0);
   const height = Number(info.height || state.previewMeta.height || 0);
   const preview = state.previewMeta.previewWidth
-    ? `preview ${state.previewMeta.previewWidth}x${state.previewMeta.previewHeight}`
-    : "preview pending";
-  state.info.textContent = error || `${width || "?"}x${height || "?"} HDR | ${preview} | zoom ${Math.round(state.view.scale * 100)}%`;
+    ? tr("preview {width}x{height}", {
+        width: state.previewMeta.previewWidth,
+        height: state.previewMeta.previewHeight,
+      })
+    : tr("preview pending");
+  const zoom = tr("zoom {pct}%", { pct: Math.round(state.view.scale * 100) });
+  state.info.textContent = error || `${width || "?"}x${height || "?"} HDR | ${preview} | ${zoom}`;
 }
 
 function handleWheel(event) {
@@ -1209,10 +1869,10 @@ async function requestSample() {
   if (!state.pointer || !state.cacheId) return;
   const p = canvasToImage(state.pointer.x, state.pointer.y);
   if (!p) {
-    state.sample.textContent = "Outside image";
+    state.sample.textContent = tr("Outside image");
     return;
   }
-  state.sample.textContent = `x ${p.x}, y ${p.y} | sampling...`;
+  state.sample.textContent = `x ${p.x}, y ${p.y} | ${tr("sampling...")}`;
   try {
     const response = await fetch("/x2hdr/grade/sample", {
       method: "POST",
@@ -1228,9 +1888,9 @@ async function requestSample() {
     });
     if (!response.ok) throw new Error(await responseText(response));
     const data = await response.json();
-    state.sample.textContent = `x ${data.x}, y ${data.y} | HDR ${fmtRgb(data.hdr_rgb)} | display ${fmtRgb(data.display_rgb)} | Y ${fmt(data.luma)}`;
+    state.sample.textContent = `x ${data.x}, y ${data.y} | HDR ${fmtRgb(data.hdr_rgb)} | ${tr("display")} ${fmtRgb(data.display_rgb)} | Y ${fmt(data.luma)}`;
   } catch (error) {
-    state.sample.textContent = error.message || "sample failed";
+    state.sample.textContent = error.message || tr("sample failed");
   }
 }
 
@@ -1265,9 +1925,20 @@ app.registerExtension({
     const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () {
       originalOnNodeCreated?.apply(this, arguments);
-      if (!(this.widgets || []).some((widget) => widget.name === "Open X2HDR color grade")) {
-        const viewer = this.addWidget("button", "Open X2HDR color grade", null, () => openModal(this));
+      const oldLabel = "Open X2HDR color grade";
+      const buttonLabel = tr(oldLabel);
+      const existing = (this.widgets || []).find(
+        (widget) => widget.x2hdrViewerButton || widget.name === oldLabel || widget.name === buttonLabel,
+      );
+      if (existing) {
+        existing.name = buttonLabel;
+        existing.callback = () => openModal(this);
+        existing.serialize = false;
+        existing.x2hdrViewerButton = true;
+      } else {
+        const viewer = this.addWidget("button", buttonLabel, null, () => openModal(this));
         viewer.serialize = false;
+        viewer.x2hdrViewerButton = true;
       }
       hideInternalWidgets(this);
     };
