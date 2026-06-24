@@ -1,4 +1,6 @@
 import os
+import json
+from hashlib import sha1
 
 from aiohttp import web
 import folder_paths
@@ -7,12 +9,13 @@ import torch
 from server import PromptServer
 
 from .nodes import _get_grade_cache_entry, _grade_params_from_mapping, _image_to_png_bytes
-from .grading import grade_display, grade_display_with_info, grade_linear
+from .grading import compute_auto_exposure_ev, grade_display, grade_display_with_info, grade_linear
 from .hdr_utils import save_exr_image
 
 
 routes = PromptServer.instance.routes
 OUTPUT_DIR = folder_paths.get_output_directory()
+MAX_PREVIEW_CACHE_ITEMS = 24
 
 
 def _error(message, status=400):
@@ -27,12 +30,7 @@ def _read_cache(data):
 
 
 def _resize_hdr_for_preview(hdr_frame, max_size):
-    try:
-        max_size = int(max_size)
-    except (TypeError, ValueError):
-        max_size = 1536
-    max_size = max(64, min(max_size, 4096))
-
+    max_size = _sanitize_preview_max_size(max_size)
     height = int(hdr_frame.shape[1])
     width = int(hdr_frame.shape[2])
     largest = max(width, height)
@@ -50,6 +48,59 @@ def _resize_hdr_for_preview(hdr_frame, max_size):
         align_corners=False,
     )
     return resized.permute(0, 2, 3, 1).contiguous()
+
+
+def _sanitize_preview_max_size(max_size):
+    try:
+        max_size = int(max_size)
+    except (TypeError, ValueError):
+        max_size = 1536
+    return max(64, min(max_size, 4096))
+
+
+def _params_cache_key(params):
+    data = params.__dict__.copy()
+    for key, value in list(data.items()):
+        if isinstance(value, tuple):
+            data[key] = [float(v) for v in value]
+        elif isinstance(value, float):
+            data[key] = round(value, 6)
+    encoded = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return sha1(encoded).hexdigest()
+
+
+def _entry_cache(entry, name):
+    cache = entry.get(name)
+    if not isinstance(cache, dict):
+        cache = {}
+        entry[name] = cache
+    return cache
+
+
+def _remember_lru(cache, key, value, limit):
+    cache[key] = value
+    while len(cache) > limit:
+        cache.pop(next(iter(cache)), None)
+
+
+def _cached_auto_exposure_ev(entry, frame, hdr_frame):
+    cache = _entry_cache(entry, "auto_exposure_cache")
+    key = int(frame)
+    if key not in cache:
+        _remember_lru(cache, key, compute_auto_exposure_ev(hdr_frame), 64)
+    return float(cache[key])
+
+
+def _preview_cache_key(frame, max_size, params):
+    return (int(frame), int(max_size), _params_cache_key(params))
+
+
+def _lock_cached_auto_exposure(entry, frame, hdr_frame, params):
+    if not params.auto_exposure or params.auto_exposure_lock:
+        return False
+    params.auto_exposure_lock = True
+    params.auto_exposure_ev = _cached_auto_exposure_ev(entry, frame, hdr_frame)
+    return True
 
 
 def _safe_output_prefix(filename_prefix, save_subfolder=""):
@@ -88,8 +139,6 @@ def _output_path(filename_prefix, save_subfolder, width, height, extension, batc
 async def x2hdr_grade_preview(request):
     data = await request.json()
     _, entry = _read_cache(data)
-    frame = int(data.get("frame", 0))
-    params = _grade_params_from_mapping(data.get("params", {}))
 
     if entry is None:
         return _error("No cached HDR image for this node. Run X2HDR Color Grade once.", 404)
@@ -98,26 +147,41 @@ async def x2hdr_grade_preview(request):
     if not isinstance(hdr, torch.Tensor) or hdr.ndim != 4 or hdr.shape[0] < 1:
         return _error("Cached HDR image is invalid.", 500)
 
+    frame = int(data.get("frame", 0))
     frame = max(0, min(frame, hdr.shape[0] - 1))
-    preview_hdr = _resize_hdr_for_preview(hdr[frame : frame + 1], data.get("max_size", 1536))
+    max_size = _sanitize_preview_max_size(data.get("max_size", 1536))
+    params = _grade_params_from_mapping(data.get("params", {}))
+    hdr_frame = hdr[frame : frame + 1]
+    ui_auto_locked = params.auto_exposure and params.auto_exposure_lock
+    _lock_cached_auto_exposure(entry, frame, hdr_frame, params)
+
+    cache = _entry_cache(entry, "preview_cache")
+    cache_key = _preview_cache_key(frame, max_size, params)
+    cached = cache.get(cache_key)
+    if cached:
+        return web.Response(body=cached["png"], content_type="image/png", headers=cached["headers"])
+
+    preview_hdr = _resize_hdr_for_preview(hdr_frame, max_size)
     display_batch, exposure_info = grade_display_with_info(preview_hdr, params)
     display = display_batch[0]
     png = _image_to_png_bytes(display)
+    headers = {
+        "X-X2HDR-Width": str(int(hdr.shape[2])),
+        "X-X2HDR-Height": str(int(hdr.shape[1])),
+        "X-X2HDR-Preview-Width": str(int(display.shape[1])),
+        "X-X2HDR-Preview-Height": str(int(display.shape[0])),
+        "X-X2HDR-Frames": str(int(hdr.shape[0])),
+        "X-X2HDR-Auto-EV": f"{exposure_info.auto_ev:.4f}",
+        "X-X2HDR-Bias-EV": f"{exposure_info.bias_ev:.4f}",
+        "X-X2HDR-Final-EV": f"{exposure_info.final_ev:.4f}",
+        "X-X2HDR-Auto-Exposure": "1" if exposure_info.auto_enabled else "0",
+        "X-X2HDR-Auto-Locked": "1" if ui_auto_locked else "0",
+    }
+    _remember_lru(cache, cache_key, {"png": png, "headers": headers}, MAX_PREVIEW_CACHE_ITEMS)
     return web.Response(
         body=png,
         content_type="image/png",
-        headers={
-            "X-X2HDR-Width": str(int(hdr.shape[2])),
-            "X-X2HDR-Height": str(int(hdr.shape[1])),
-            "X-X2HDR-Preview-Width": str(int(display.shape[1])),
-            "X-X2HDR-Preview-Height": str(int(display.shape[0])),
-            "X-X2HDR-Frames": str(int(hdr.shape[0])),
-            "X-X2HDR-Auto-EV": f"{exposure_info.auto_ev:.4f}",
-            "X-X2HDR-Bias-EV": f"{exposure_info.bias_ev:.4f}",
-            "X-X2HDR-Final-EV": f"{exposure_info.final_ev:.4f}",
-            "X-X2HDR-Auto-Exposure": "1" if exposure_info.auto_enabled else "0",
-            "X-X2HDR-Auto-Locked": "1" if exposure_info.auto_locked else "0",
-        },
+        headers=headers,
     )
 
 
@@ -153,11 +217,16 @@ async def x2hdr_grade_sample(request):
     x = max(0, min(int(round(float(data.get("x", 0)))), hdr.shape[2] - 1))
     y = max(0, min(int(round(float(data.get("y", 0)))), hdr.shape[1] - 1))
     params = _grade_params_from_mapping(data.get("params", {}))
+    hdr_frame = hdr[frame : frame + 1]
+    _lock_cached_auto_exposure(entry, frame, hdr_frame, params)
 
     hdr_pixel = hdr[frame, y, x, :3].detach().float().cpu()
-    display_pixel = grade_display(hdr[frame : frame + 1, y : y + 1, x : x + 1, :3], params)[
-        0, 0, 0, :3
-    ].detach().float().cpu()
+    display_pixel = (
+        grade_display(hdr_frame[:, y : y + 1, x : x + 1, :3], params)[0, 0, 0, :3]
+        .detach()
+        .float()
+        .cpu()
+    )
     return web.json_response(
         {
             "frame": frame,
@@ -188,6 +257,7 @@ async def x2hdr_grade_save(request):
     save_subfolder = data.get("save_subfolder") or ""
     export_format = str(data.get("format") or "png").lower()
     hdr_frame = hdr[frame : frame + 1]
+    _lock_cached_auto_exposure(entry, frame, hdr_frame, params)
 
     if export_format == "png":
         display = grade_display(hdr_frame, params)[0]

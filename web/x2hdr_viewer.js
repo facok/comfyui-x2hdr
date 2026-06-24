@@ -544,6 +544,9 @@ const state = {
   renderInFlight: false,
   renderQueued: false,
   queuedHighQuality: false,
+  previewAbort: null,
+  previewCache: new Map(),
+  previewCacheLimit: 12,
   lastRenderStarted: 0,
   sampleTimer: 0,
   serial: 0,
@@ -1328,6 +1331,48 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function stableParamsKey(params) {
+  return PARAMS.map((param) => {
+    if (param.name === "auto_exposure_ev" && params.auto_exposure && !params.auto_exposure_lock) {
+      return `${param.name}:auto`;
+    }
+    const value = params[param.name] ?? param.default;
+    if (typeof value === "number") return `${param.name}:${Number(value).toFixed(6)}`;
+    return `${param.name}:${String(value)}`;
+  }).join("|");
+}
+
+function previewCacheKey(params, compare, maxSize) {
+  return [state.cacheId, state.frameIndex, maxSize, compare ? 1 : 0, stableParamsKey(params)].join("::");
+}
+
+function rememberPreview(cacheKey, drawable) {
+  if (!cacheKey || !drawable) return;
+  state.previewCache.set(cacheKey, drawable);
+  while (state.previewCache.size > state.previewCacheLimit) {
+    const [oldestKey, oldestValue] = state.previewCache.entries().next().value || [];
+    state.previewCache.delete(oldestKey);
+    if (oldestValue !== state.image && oldestValue !== state.compareImage) oldestValue?.close?.();
+  }
+}
+
+function isCachedPreview(drawable) {
+  for (const cached of state.previewCache.values()) {
+    if (cached === drawable) return true;
+  }
+  return false;
+}
+
+function closePreviewDrawable(drawable) {
+  if (!drawable || drawable === state.image || drawable === state.compareImage || isCachedPreview(drawable)) return;
+  drawable.close?.();
+}
+
+function clearPreviewCache() {
+  for (const drawable of state.previewCache.values()) drawable?.close?.();
+  state.previewCache.clear();
+}
+
 async function openModal(node) {
   if (!state.modal) buildModal();
   state.currentNode = node;
@@ -1340,6 +1385,7 @@ async function openModal(node) {
   state.pointer = null;
   state.cacheInfo = node.x2hdrViewer || null;
   state.cacheId = String(state.cacheInfo?.cache_id || state.cacheInfo?.node_id || node.id);
+  clearPreviewCache();
   state.modal.style.display = "flex";
   restoreActivePresetState(node);
   updateExposurePanel();
@@ -1357,9 +1403,12 @@ function closeModal() {
   if (!state.modal) return;
   state.modal.style.display = "none";
   revokeImages();
+  clearPreviewCache();
   state.currentNode = null;
   clearTimeout(state.renderTimer);
   clearTimeout(state.sampleTimer);
+  state.previewAbort?.abort();
+  state.previewAbort = null;
   state.renderInFlight = false;
   state.renderQueued = false;
 }
@@ -1513,13 +1562,13 @@ async function renderPreview(highQuality = false) {
       state.compareKey = "";
     }
     if (serial !== state.serial) {
-      image.close?.();
-      if (compareImage !== state.compareImage) compareImage.close?.();
+      closePreviewDrawable(image);
+      if (compareImage !== state.compareImage) closePreviewDrawable(compareImage);
       return;
     }
 
-    state.image?.close?.();
-    if (state.compareImage && compareImage !== state.compareImage) state.compareImage.close?.();
+    if (state.image !== image) closePreviewDrawable(state.image);
+    if (state.compareImage && compareImage !== state.compareImage) closePreviewDrawable(state.compareImage);
     state.image = image;
     state.compareImage = compareImage;
     if (state.compareMode !== "graded") state.compareKey = compareKey;
@@ -1530,6 +1579,7 @@ async function renderPreview(highQuality = false) {
     setStatus(tr("live"));
   } catch (error) {
     if (serial !== state.serial) return;
+    if (error?.name === "AbortError") return;
     setStatus(error.message || tr("preview failed"));
     drawCanvas();
   } finally {
@@ -1545,8 +1595,17 @@ async function renderPreview(highQuality = false) {
 }
 
 async function requestPreview(params, compare = false, maxSize = previewMaxSize(false)) {
+  const cacheKey = previewCacheKey(params, compare, maxSize);
+  const cached = state.previewCache.get(cacheKey);
+  if (cached) return cached;
+
+  if (!compare) {
+    state.previewAbort?.abort();
+    state.previewAbort = new AbortController();
+  }
   const response = await fetch("/x2hdr/grade/preview", {
     method: "POST",
+    signal: compare ? undefined : state.previewAbort?.signal,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       cache_id: state.cacheId,
@@ -1584,7 +1643,9 @@ async function requestPreview(params, compare = false, maxSize = previewMaxSize(
   }
 
   const blob = await response.blob();
-  return await blobToDrawable(blob, compare);
+  const drawable = await blobToDrawable(blob, compare);
+  rememberPreview(cacheKey, drawable);
+  return drawable;
 }
 
 async function blobToDrawable(blob, compare) {
@@ -1907,8 +1968,8 @@ function fmt(value) {
 }
 
 function revokeImages() {
-  state.image?.close?.();
-  state.compareImage?.close?.();
+  closePreviewDrawable(state.image);
+  closePreviewDrawable(state.compareImage);
   state.image = null;
   state.compareImage = null;
   if (state.lastUrl) URL.revokeObjectURL(state.lastUrl);

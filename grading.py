@@ -237,6 +237,12 @@ def _compute_auto_exposure_stops(c: torch.Tensor) -> torch.Tensor:
     return stops
 
 
+def compute_auto_exposure_ev(hdr: torch.Tensor) -> float:
+    c = torch.nan_to_num(hdr[..., :3].float(), nan=0.0, posinf=0.0, neginf=0.0)
+    c = torch.clamp(c, min=0.0)
+    return float(_compute_auto_exposure_stops(c).flatten()[0].detach().cpu())
+
+
 def _input_exposure(c: torch.Tensor, params: GradeParams) -> tuple[torch.Tensor, ExposureInfo]:
     batch = int(c.shape[0]) if c.ndim == 4 else 1
     shape = (batch,) + (1,) * (c.ndim - 1)
