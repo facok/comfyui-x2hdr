@@ -1348,17 +1348,22 @@ function previewCacheKey(params, compare, maxSize) {
 
 function rememberPreview(cacheKey, drawable) {
   if (!cacheKey || !drawable) return;
-  state.previewCache.set(cacheKey, drawable);
+  state.previewCache.set(cacheKey, {
+    drawable,
+    previewMeta: { ...state.previewMeta },
+    exposureMeta: { ...state.exposureMeta },
+  });
   while (state.previewCache.size > state.previewCacheLimit) {
     const [oldestKey, oldestValue] = state.previewCache.entries().next().value || [];
     state.previewCache.delete(oldestKey);
-    if (oldestValue !== state.image && oldestValue !== state.compareImage) oldestValue?.close?.();
+    const oldestDrawable = oldestValue?.drawable;
+    if (oldestDrawable !== state.image && oldestDrawable !== state.compareImage) oldestDrawable?.close?.();
   }
 }
 
 function isCachedPreview(drawable) {
   for (const cached of state.previewCache.values()) {
-    if (cached === drawable) return true;
+    if (cached?.drawable === drawable) return true;
   }
   return false;
 }
@@ -1369,8 +1374,23 @@ function closePreviewDrawable(drawable) {
 }
 
 function clearPreviewCache() {
-  for (const drawable of state.previewCache.values()) drawable?.close?.();
+  for (const cached of state.previewCache.values()) cached?.drawable?.close?.();
   state.previewCache.clear();
+}
+
+function applyCachedPreviewState(cached) {
+  if (!cached) return;
+  if (cached.previewMeta) state.previewMeta = { ...cached.previewMeta };
+  if (cached.exposureMeta) state.exposureMeta = { ...cached.exposureMeta };
+  if (state.working.auto_exposure && !state.working.auto_exposure_lock) {
+    state.working.auto_exposure_ev = state.exposureMeta.autoEv;
+  }
+  updateExposurePanel();
+  if (state.cacheInfo && cached.previewMeta) {
+    state.cacheInfo.width = state.previewMeta.width || state.cacheInfo.width;
+    state.cacheInfo.height = state.previewMeta.height || state.cacheInfo.height;
+    state.cacheInfo.frames = state.previewMeta.frames || state.cacheInfo.frames;
+  }
 }
 
 async function openModal(node) {
@@ -1597,7 +1617,10 @@ async function renderPreview(highQuality = false) {
 async function requestPreview(params, compare = false, maxSize = previewMaxSize(false)) {
   const cacheKey = previewCacheKey(params, compare, maxSize);
   const cached = state.previewCache.get(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    if (!compare) applyCachedPreviewState(cached);
+    return cached.drawable;
+  }
 
   if (!compare) {
     state.previewAbort?.abort();

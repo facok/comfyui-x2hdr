@@ -91,8 +91,8 @@ def _cached_auto_exposure_ev(entry, frame, hdr_frame):
     return float(cache[key])
 
 
-def _preview_cache_key(frame, max_size, params):
-    return (int(frame), int(max_size), _params_cache_key(params))
+def _preview_cache_key(frame, max_size, params, ui_auto_locked=False):
+    return (int(frame), int(max_size), bool(ui_auto_locked), _params_cache_key(params))
 
 
 def _lock_cached_auto_exposure(entry, frame, hdr_frame, params):
@@ -156,7 +156,7 @@ async def x2hdr_grade_preview(request):
     _lock_cached_auto_exposure(entry, frame, hdr_frame, params)
 
     cache = _entry_cache(entry, "preview_cache")
-    cache_key = _preview_cache_key(frame, max_size, params)
+    cache_key = _preview_cache_key(frame, max_size, params, ui_auto_locked)
     cached = cache.get(cache_key)
     if cached:
         return web.Response(body=cached["png"], content_type="image/png", headers=cached["headers"])

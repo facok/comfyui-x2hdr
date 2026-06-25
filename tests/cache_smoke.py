@@ -63,10 +63,14 @@ def main():
     if not was_locked or not params.auto_exposure_lock:
         raise SystemExit("auto exposure params were not locked to cached EV")
 
-    key1 = _preview_cache_key(0, _sanitize_preview_max_size("512"), params)
-    key2 = _preview_cache_key(0, 512, params)
+    key1 = _preview_cache_key(0, _sanitize_preview_max_size("512"), params, ui_auto_locked=False)
+    key2 = _preview_cache_key(0, 512, params, ui_auto_locked=False)
     if key1 != key2:
         raise SystemExit("preview cache key is not stable for sanitized max_size")
+
+    locked_key = _preview_cache_key(0, 512, params, ui_auto_locked=True)
+    if locked_key == key1:
+        raise SystemExit("preview cache key must preserve UI auto-exposure lock state")
 
     if _sanitize_preview_max_size("bad") != 1536:
         raise SystemExit("invalid max_size should fall back to 1536")
