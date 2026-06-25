@@ -71,6 +71,30 @@ def luminance(hdr: torch.Tensor) -> torch.Tensor:
     return torch.sum(hdr[..., :3] * weights, dim=-1)
 
 
+def scale_to_l_peak(hdr: torch.Tensor, l_peak: float = 4000.0) -> tuple[torch.Tensor, float]:
+    data = hdr.to(dtype=torch.float32)
+    max_value = float(torch.max(data).detach().cpu().item()) if data.numel() else 0.0
+    if max_value <= 0.0 or not math.isfinite(max_value):
+        return torch.full_like(data, L_MIN, dtype=torch.float32), 1.0
+
+    scale = float(l_peak) / max_value
+    return (data * scale).to(dtype=torch.float32), float(scale)
+
+
+def apply_batch_l_peak_scaling(hdr: torch.Tensor, l_peak: float) -> tuple[torch.Tensor, list[float]]:
+    if hdr.ndim == 3:
+        scaled, scale = scale_to_l_peak(hdr, l_peak=l_peak)
+        return scaled, [scale]
+
+    scaled_images = []
+    scales = []
+    for image in hdr:
+        image_scaled, scale = scale_to_l_peak(image, l_peak=l_peak)
+        scaled_images.append(image_scaled)
+        scales.append(scale)
+    return torch.stack(scaled_images, dim=0), scales
+
+
 def apply_luminance_normalization(
     hdr: torch.Tensor,
     target_luminance: float,
@@ -126,8 +150,9 @@ def decode_image_to_hdr(
     pu21 = image_to_pu21(image, input_range, clamp_pu21=clamp_pu21)
     hdr = pu21_decode(pu21, clamp_pu21=clamp_pu21)
 
+    l_peak_scales = [1.0] * (int(hdr.shape[0]) if hdr.ndim == 4 else 1)
     if apply_l_peak:
-        hdr = hdr * float(l_peak)
+        hdr, l_peak_scales = apply_batch_l_peak_scaling(hdr, float(l_peak))
 
     hdr, normalization_scales = apply_batch_luminance_normalization(
         hdr,
@@ -139,6 +164,8 @@ def decode_image_to_hdr(
         {
             "l_peak": float(l_peak),
             "apply_l_peak": bool(apply_l_peak),
+            "l_peak_scale": float(l_peak_scales[0]) if l_peak_scales else 1.0,
+            "l_peak_scales": [float(scale) for scale in l_peak_scales],
             "target_luminance": float(target_luminance),
             "target_percentile": float(target_percentile),
             "normalization_scales": [float(scale) for scale in normalization_scales],

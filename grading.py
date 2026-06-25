@@ -193,47 +193,40 @@ def _compute_auto_exposure_stops(c: torch.Tensor) -> torch.Tensor:
     if flat.shape[1] > 262144:
         step = max(1, flat.shape[1] // 262144)
         flat = flat[:, ::step]
-    flat_cpu = flat.float().cpu()
-    q = torch.tensor([0.02, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99], dtype=torch.float32)
-    quantiles = torch.quantile(flat_cpu, q, dim=1).to(device=c.device, dtype=c.dtype)
+    flat_cpu = flat.float().cpu().clamp(min=1e-5)
+    q = torch.tensor([0.02, 0.10, 0.25, 0.50, 0.75, 0.90, 0.98], dtype=torch.float32)
+    quantiles_cpu = torch.quantile(flat_cpu, q, dim=1)
+
+    lower = quantiles_cpu[0].reshape(-1, 1).clamp(min=1e-5)
+    upper = quantiles_cpu[6].reshape(-1, 1).clamp(min=1e-5)
+    metered_cpu = flat_cpu.clamp(min=lower, max=upper)
+    log_average_cpu = torch.pow(2.0, torch.log2(metered_cpu).mean(dim=1))
 
     shape = (-1,) + (1,) * (c.ndim - 1)
-    p02, p10, p25, p50, p75, p90, p95, p99 = [v.reshape(shape).clamp(min=1e-5) for v in quantiles]
-    log_flat = torch.log2(flat_cpu.clamp(min=1e-5))
-    log_average = torch.pow(
-        torch.tensor(2.0, device=c.device, dtype=c.dtype),
-        log_flat.mean(dim=1).to(device=c.device, dtype=c.dtype).reshape(shape),
-    ).clamp(min=1e-5)
+    quantiles = quantiles_cpu.to(device=c.device, dtype=c.dtype)
+    _, p10, p25, p50, _, p90, p98 = [v.reshape(shape).clamp(min=1e-5) for v in quantiles]
+    log_average = log_average_cpu.to(device=c.device, dtype=c.dtype).reshape(shape).clamp(min=1e-5)
 
-    dynamic_range = torch.log2(p95 / p10).clamp(min=0.0)
-    specular_ratio = torch.log2(p99 / p90).clamp(min=0.0)
-    specular_weight = ((specular_ratio - 1.25) / 2.75).clamp(0.0, 1.0)
-    low_key_weight = ((torch.log2(torch.tensor(0.14, device=c.device, dtype=c.dtype) / p50)) / 2.0).clamp(0.0, 1.0)
-    high_key_weight = ((torch.log2(p50 / torch.tensor(0.34, device=c.device, dtype=c.dtype))) / 1.5).clamp(0.0, 1.0)
+    high_skew = torch.log2(p90 / p25).clamp(min=0.0)
+    sky_weight = ((high_skew - 2.25) / 2.75).clamp(0.0, 1.0)
+    low_key_weight = (torch.log2(torch.tensor(0.13, device=c.device, dtype=c.dtype) / p50) / 2.5).clamp(0.0, 1.0)
+    high_key_weight = (torch.log2(p50 / torch.tensor(0.42, device=c.device, dtype=c.dtype)) / 2.0).clamp(0.0, 1.0)
 
-    mid_target = torch.lerp(
-        torch.full_like(p50, 0.18),
-        torch.full_like(p50, 0.23),
-        low_key_weight * (1.0 - specular_weight * 0.55),
-    )
-    mid_target = torch.lerp(mid_target, torch.full_like(p50, 0.16), high_key_weight)
-    high_target = torch.lerp(torch.full_like(p90, 1.05), torch.full_like(p90, 1.45), specular_weight)
-    high_meter = torch.lerp(p95, p90, specular_weight)
+    target = torch.full_like(p50, 0.20)
+    target = torch.lerp(target, torch.full_like(target, 0.24), low_key_weight)
+    target = torch.lerp(target, torch.full_like(target, 0.32), high_key_weight * (1.0 - sky_weight * 0.65))
 
-    mid_stops = torch.log2(mid_target / p50)
-    key_stops = torch.log2(torch.full_like(log_average, 0.18) / log_average)
-    high_stops = torch.log2(high_target / high_meter)
-    shadow_stops = torch.log2(torch.full_like(p10, 0.035) / p10)
+    meter_log = torch.lerp(torch.log2(log_average), torch.log2(p25), sky_weight * 0.92)
+    meter = torch.pow(torch.tensor(2.0, device=c.device, dtype=c.dtype), meter_log).clamp(min=1e-5)
+    stops = torch.log2(target / meter)
 
-    tonal_stops = mid_stops * 0.68 + key_stops * 0.22 + shadow_stops * 0.10
-    highlight_weight = ((dynamic_range - 2.4) / 3.0).clamp(0.20, 0.72) * (1.0 - specular_weight * 0.65)
-    stops = tonal_stops * (1.0 - highlight_weight) + high_stops * highlight_weight
-
-    max_brighten = high_stops + 1.15 + specular_weight * 1.35
-    max_darken = shadow_stops - 1.00
+    shadow_floor = torch.log2(torch.full_like(p10, 0.035) / p10)
+    max_brighten = torch.maximum(torch.full_like(stops, 1.25), torch.log2(torch.full_like(p98, 1.85) / p98) + 2.1)
+    min_darken = torch.lerp(torch.full_like(stops, -1.85), torch.full_like(stops, -0.85), sky_weight)
+    min_darken = torch.minimum(min_darken, shadow_floor - 0.15)
     stops = torch.minimum(stops, max_brighten)
-    stops = torch.maximum(stops, max_darken)
-    stops = stops.clamp(-3.5, 3.5)
+    stops = torch.maximum(stops, min_darken)
+    stops = stops.clamp(-2.25, 3.5)
     return stops
 
 
