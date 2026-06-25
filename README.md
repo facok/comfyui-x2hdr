@@ -1,16 +1,17 @@
-# ComfyUI X2HDR Ideogram4
+# ComfyUI X2HDR
 
 English | [中文](README_zh.md)
 
-Self-contained ComfyUI custom nodes for Ideogram4 X2HDR workflows. The package decodes PU21 model output into linear HDR RGB, writes float OpenEXR files, provides a built-in interactive HDR color grading viewer, creates tone-mapped previews, and reports HDR metrics.
+Self-contained ComfyUI custom nodes for generic X2HDR/PU21 workflows. The package decodes PU21 model output into linear HDR RGB, writes float OpenEXR files, provides a built-in interactive HDR color grading viewer, creates tone-mapped previews, and reports HDR metrics.
 
 ## Nodes
 
-- `X2HDR PU21 Decode`: inverse-decodes Ideogram4 X2HDR PU21 output into linear float HDR RGB.
+- `X2HDR PU21 Decode`: inverse-decodes X2HDR PU21 model output into linear float HDR RGB.
 - `X2HDR Save EXR`: saves decoded HDR images as `.exr` files and returns the sanitized HDR tensor for downstream nodes.
 - `X2HDR Color Grade`: grades linear HDR, returns LDR/HDR outputs, and opens the built-in interactive grading viewer.
 - `X2HDR Tone Map Preview`: creates ACES, Reinhard, or log LDR previews.
 - `X2HDR Metrics`: returns luminance and RGB statistics as JSON.
+- `X2HDR Dynamic Range QA`: reports whether decoded HDR exceeds the SDR/VAE range and creates a multi-exposure preview strip.
 
 ## Why This Exists
 
@@ -26,7 +27,7 @@ EXR linear HDR
 A PNG or JPG saved directly after `VAE Decode` is only a PU21-space preview, not a real linear HDR image. The correct inference path is:
 
 ```text
-Ideogram4 + X2HDR LoRA
+X2HDR model or LoRA
 -> VAE Decode
 -> X2HDR PU21 Decode
 -> X2HDR Save EXR
@@ -39,7 +40,7 @@ Ideogram4 + X2HDR LoRA
 Place this folder under:
 
 ```text
-ComfyUI/custom_nodes/comfyui-x2hdr-ideogram4
+ComfyUI/custom_nodes/comfyui-x2hdr
 ```
 
 Then restart ComfyUI. The nodes appear under:
@@ -105,7 +106,7 @@ Set `target_luminance` to `0` to disable percentile normalization and preserve t
 An example scaffold is included at:
 
 ```text
-examples/ideogram4_x2hdr_text2image.json
+examples/x2hdr_text2image.json
 ```
 
 ## Validation
@@ -118,3 +119,13 @@ Suggested tolerance:
 max_abs_error < 1e-4
 mean_abs_error < 1e-5
 ```
+
+For dynamic-range validation, connect decoded HDR to `X2HDR Dynamic Range QA`. It reports `max_rgb`, luminance percentiles, highlight headroom in stops, dynamic range in stops, and whether the image exceeds the SDR reference. It also creates a `-4/-2/0/+2/+4 EV` preview strip so highlight and shadow recoverability can be inspected visually.
+
+`verdict = pass` means every frame passes all three checks:
+
+- `max_rgb > sdr_reference` or `lum_p995 > sdr_reference`
+- `hdr_headroom_p995_stops >= headroom_threshold_stops`
+- `dynamic_range_p995_over_positive_p01_stops >= dynamic_range_threshold_stops`
+
+`verdict = review` means at least one frame failed a check. Inspect `review_reasons`, per-frame metrics, and the exposure strip.

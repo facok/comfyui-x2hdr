@@ -1,8 +1,8 @@
-# Ideogram4 X2HDR ComfyUI Implementation Plan
+# X2HDR ComfyUI Implementation Plan
 
 ## 目标
 
-在 ComfyUI 中完整支持 Ideogram4 X2HDR LoRA 推理，使生成结果可以从模型输出的 PU21 编码图正确恢复为线性 HDR，并保存为 EXR，同时提供可视化 tone-map 预览和基础 HDR 指标。
+在 ComfyUI 中完整支持通用 X2HDR/PU21 模型或 LoRA 推理，使生成结果可以从模型输出的 PU21 编码图正确恢复为线性 HDR，并保存为 EXR，同时提供可视化 tone-map 预览和基础 HDR 指标。
 
 核心目标不是只让图片“看起来能显示”，而是保证训练、ai-toolkit sample、ComfyUI 推理三者的 HDR 解码逻辑一致。
 
@@ -20,7 +20,7 @@ EXR linear HDR
 因此推理输出不能当普通 LDR 图像直接保存。正确推理链路应该是：
 
 ```text
-Ideogram4 + X2HDR LoRA
+X2HDR model or LoRA
 -> VAE decode
 -> decoded [-1, 1] or ComfyUI IMAGE [0, 1]
 -> PU21 inverse decode
@@ -203,14 +203,14 @@ X2HDR Metrics
 建议单独做一个 ComfyUI custom node repo：
 
 ```text
-ComfyUI-Ideogram4-X2HDR/
+ComfyUI-X2HDR/
   __init__.py
   nodes.py
   hdr_utils.py
   pyproject.toml
   README.md
   examples/
-    ideogram4_x2hdr_text2image.json
+    x2hdr_text2image.json
 ```
 
 其中：
@@ -330,9 +330,9 @@ mapped = mapped ** (1.0 / gamma)
 基础 text2image HDR workflow：
 
 ```text
-Load Ideogram4 Model
+Load X2HDR-capable Model
 -> Load X2HDR LoRA
--> Ideogram4 Text Encode
+-> Text Encode
 -> Sampler
 -> VAE Decode
 -> X2HDR PU21 Decode
@@ -341,7 +341,7 @@ Load Ideogram4 Model
 -> Save Image preview PNG
 ```
 
-如果 ComfyUI 的 Ideogram4 节点已经在 VAE Decode 后强制转 PNG 或 clamp 到 LDR，需要改造模型节点，让它暴露 VAE decoded float image，不能只给 PIL/uint8 图像。
+如果上游模型节点已经在 VAE Decode 后强制转 PNG 或 clamp 到 LDR，需要改造模型节点，让它暴露 VAE decoded float image，不能只给 PIL/uint8 图像。
 
 ## 参数默认值
 
@@ -446,13 +446,13 @@ target_percentile = 99.5
 
 提供：
 
-- `examples/ideogram4_x2hdr_text2image.json`
+- `examples/x2hdr_text2image.json`
 - README 中写明参数含义。
 - 截图或示例输出说明 EXR 与 preview 的区别。
 
-### 阶段 4：与 Ideogram4 节点深度集成
+### 阶段 4：与上游模型节点深度集成
 
-如果现有 ComfyUI Ideogram4 节点无法暴露 VAE decoded float image，需要改造：
+如果现有 ComfyUI 上游模型节点无法暴露 VAE decoded float image，需要改造：
 
 - 在 VAE Decode 后保留 float tensor。
 - 不要在 PU21 decode 前转 uint8。
@@ -471,11 +471,10 @@ target_percentile = 99.5
 
 ComfyUI 支持完成后，应满足：
 
-- 可以加载 Ideogram4 + X2HDR LoRA 生成图像。
+- 可以加载 X2HDR 模型或 LoRA 生成图像。
 - 可以从 VAE decoded image 正确 inverse PU21。
 - 可以保存 linear HDR `.exr`。
 - 可以生成 ACES/Reinhard/Log tone-map preview。
 - 可以输出 HDR metrics。
 - 与 ai-toolkit sample 在同参数下得到接近的亮度统计。
 - 离线环境可用，不依赖网络下载。
-

@@ -1,7 +1,7 @@
 [project]
-name = "comfyui-x2hdr-ideogram4"
+name = "comfyui-x2hdr"
 version = "0.1.0"
-description = "ComfyUI nodes for Ideogram4 X2HDR PU21 decode, EXR export, tone-map previews, color grading, and metrics."
+description = "ComfyUI nodes for generic X2HDR PU21 decode, EXR export, tone-map previews, color grading, and metrics."
 requires-python = ">=3.10"
 dependencies = [
   "av",

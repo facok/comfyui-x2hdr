@@ -10,6 +10,7 @@ from PIL import Image
 from .grading import GradeParams, TONE_MAPS as COLOR_GRADE_TONE_MAPS, grade_display, grade_linear
 from .hdr_utils import (
     compute_metrics,
+    compute_dynamic_range_qa,
     decode_image_to_hdr,
     save_exr_image,
     tone_map,
@@ -47,6 +48,24 @@ def _image_to_png_bytes(image):
     output = BytesIO()
     Image.fromarray(arr, "RGB").save(output, format="PNG", compress_level=4)
     return output.getvalue()
+
+
+def _exposure_preview_strip(hdr_image, ev_values, method="aces", white_percentile=99.5, gamma=2.2):
+    strips = []
+    for image in hdr_image:
+        previews = [
+            tone_map(
+                image,
+                method=method,
+                white_percentile=white_percentile,
+                white_point=0.0,
+                exposure=2.0 ** float(ev),
+                gamma=gamma,
+            )
+            for ev in ev_values
+        ]
+        strips.append(torch.cat(previews, dim=1))
+    return torch.stack(strips, dim=0).contiguous()
 
 
 def _grade_params_from_mapping(params):
@@ -189,7 +208,7 @@ class X2HDRPU21Decode:
     RETURN_NAMES = ("hdr_image", "metrics_json")
     FUNCTION = "decode"
     CATEGORY = "image/HDR/X2HDR"
-    DESCRIPTION = "Inverse-decodes Ideogram4 X2HDR PU21 output into linear float HDR RGB."
+    DESCRIPTION = "Inverse-decodes X2HDR PU21 model output into linear float HDR RGB."
 
     def decode(
         self,
@@ -541,12 +560,129 @@ class X2HDRMetrics:
         return (metrics_json,)
 
 
+class X2HDRDynamicRangeQA:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "hdr_image": ("IMAGE",),
+                "sdr_reference": (
+                    "FLOAT",
+                    {
+                        "default": 1.0,
+                        "min": 0.001,
+                        "max": 100000.0,
+                        "step": 0.01,
+                        "tooltip": "Reference SDR ceiling. A frame must have max_rgb or lum_p995 above this value to prove it exceeds SDR/VAE range.",
+                    },
+                ),
+                "headroom_threshold_stops": (
+                    "FLOAT",
+                    {
+                        "default": 3.0,
+                        "min": 0.0,
+                        "max": 32.0,
+                        "step": 0.1,
+                        "tooltip": "Minimum highlight headroom in stops: log2(lum_p995 / lum_p50). Higher means highlights carry more recoverable range above midtones.",
+                    },
+                ),
+                "dynamic_range_threshold_stops": (
+                    "FLOAT",
+                    {
+                        "default": 10.0,
+                        "min": 0.0,
+                        "max": 32.0,
+                        "step": 0.1,
+                        "tooltip": "Minimum useful dynamic range in stops: log2(lum_p995 / positive_lum_p01). Pure black pixels are reported separately as black_fraction.",
+                    },
+                ),
+                "preview_method": (
+                    ["aces", "reinhard", "log"],
+                    {"default": "aces", "tooltip": "Tone mapper used for the exposure preview strip."},
+                ),
+                "white_percentile": (
+                    "FLOAT",
+                    {
+                        "default": 99.5,
+                        "min": 0.0,
+                        "max": 100.0,
+                        "step": 0.1,
+                        "tooltip": "Luminance percentile used as the preview white point when white_point is automatic.",
+                    },
+                ),
+                "gamma": (
+                    "FLOAT",
+                    {
+                        "default": 2.2,
+                        "min": 0.1,
+                        "max": 8.0,
+                        "step": 0.01,
+                        "tooltip": "Display gamma for the LDR exposure preview strip.",
+                    },
+                ),
+                "save_preview": (
+                    "BOOLEAN",
+                    {"default": True, "tooltip": "Save the -4/-2/0/+2/+4 EV strip as a temporary preview image in the node UI."},
+                ),
+                "filename_prefix": (
+                    "STRING",
+                    {"default": "x2hdr_dr_qa", "tooltip": "Filename prefix for saved temporary QA preview strips."},
+                ),
+            }
+        }
+
+    RETURN_TYPES = ("STRING", "IMAGE")
+    RETURN_NAMES = ("qa_json", "exposure_strip")
+    FUNCTION = "qa"
+    CATEGORY = "image/HDR/X2HDR"
+    DESCRIPTION = "Reports HDR dynamic-range QA metrics and builds a -4/-2/0/+2/+4 EV exposure preview strip."
+
+    def qa(
+        self,
+        hdr_image,
+        sdr_reference=1.0,
+        headroom_threshold_stops=3.0,
+        dynamic_range_threshold_stops=10.0,
+        preview_method="aces",
+        white_percentile=99.5,
+        gamma=2.2,
+        save_preview=True,
+        filename_prefix="x2hdr_dr_qa",
+    ):
+        ev_values = [-4.0, -2.0, 0.0, 2.0, 4.0]
+        qa_metrics = compute_dynamic_range_qa(
+            hdr_image,
+            sdr_reference=sdr_reference,
+            headroom_threshold_stops=headroom_threshold_stops,
+            dynamic_range_threshold_stops=dynamic_range_threshold_stops,
+        )
+        qa_metrics["preview_ev_values"] = ev_values
+        qa_metrics["preview_method"] = str(preview_method)
+        qa_metrics["white_percentile"] = float(white_percentile)
+
+        exposure_strip = _exposure_preview_strip(
+            hdr_image,
+            ev_values=ev_values,
+            method=preview_method,
+            white_percentile=white_percentile,
+            gamma=gamma,
+        )
+        qa_json = json.dumps(qa_metrics, indent=2)
+
+        if save_preview:
+            previews = _save_preview_pngs(exposure_strip, filename_prefix)
+            return {"ui": {"images": previews}, "result": (qa_json, exposure_strip)}
+
+        return (qa_json, exposure_strip)
+
+
 NODE_CLASS_MAPPINGS = {
     "X2HDRPU21Decode": X2HDRPU21Decode,
     "X2HDRSaveEXR": X2HDRSaveEXR,
     "X2HDRToneMapPreview": X2HDRToneMapPreview,
     "X2HDRColorGrade": X2HDRColorGrade,
     "X2HDRMetrics": X2HDRMetrics,
+    "X2HDRDynamicRangeQA": X2HDRDynamicRangeQA,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -555,4 +691,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "X2HDRToneMapPreview": "X2HDR Tone Map Preview",
     "X2HDRColorGrade": "X2HDR Color Grade",
     "X2HDRMetrics": "X2HDR Metrics",
+    "X2HDRDynamicRangeQA": "X2HDR Dynamic Range QA",
 }

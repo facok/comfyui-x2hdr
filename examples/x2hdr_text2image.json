@@ -1,5 +1,5 @@
 {
-  "description": "Scaffold for an Ideogram4 X2HDR workflow. Connect your Ideogram4 VAE Decode IMAGE output to node 10, then route node 10 to EXR save and tone-map preview.",
+  "description": "Scaffold for a generic X2HDR/PU21 workflow. Connect your model's VAE Decode IMAGE output to node 10, then route node 10 to EXR save and tone-map preview.",
   "nodes": [
     {
       "id": 10,

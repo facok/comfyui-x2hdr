@@ -183,6 +183,16 @@ def percentile(values: torch.Tensor, q: float) -> float:
     return float(torch.quantile(finite.float().cpu(), q_norm).item())
 
 
+def positive_percentile(values: torch.Tensor, q: float, floor: float = EPSILON) -> float:
+    values = values.detach().reshape(-1)
+    finite = values[torch.isfinite(values)]
+    positive = finite[finite > float(floor)]
+    if positive.numel() == 0:
+        return 0.0
+    q_norm = max(0.0, min(1.0, float(q) / 100.0))
+    return float(torch.quantile(positive.float().cpu(), q_norm).item())
+
+
 def _safe_stop_ratio(high: float, low: float) -> float:
     if high <= EPSILON or low <= EPSILON:
         return 0.0
@@ -226,6 +236,130 @@ def compute_metrics(hdr: torch.Tensor) -> dict[str, Any]:
         "stops_max_over_p01": _safe_stop_ratio(lum_max, lum_p01),
         "negative_values": negative_count,
         "nonfinite_values": nonfinite_count,
+    }
+
+
+def compute_dynamic_range_qa(
+    hdr: torch.Tensor,
+    sdr_reference: float = 1.0,
+    headroom_threshold_stops: float = 3.0,
+    dynamic_range_threshold_stops: float = 10.0,
+) -> dict[str, Any]:
+    sdr = max(float(sdr_reference), EPSILON)
+    headroom_threshold = float(headroom_threshold_stops)
+    dynamic_range_threshold = float(dynamic_range_threshold_stops)
+
+    data = torch.nan_to_num(hdr.detach().float(), nan=0.0, posinf=0.0, neginf=0.0)
+    data = torch.clamp(data, min=0.0)
+    frames = data if data.ndim == 4 else data.unsqueeze(0)
+
+    frame_reports = []
+    for index, frame in enumerate(frames):
+        lum = luminance(frame)
+        lum_p01 = percentile(lum, 1.0)
+        lum_p05 = percentile(lum, 5.0)
+        lum_p10 = percentile(lum, 10.0)
+        lum_p50 = percentile(lum, 50.0)
+        lum_p90 = percentile(lum, 90.0)
+        lum_p95 = percentile(lum, 95.0)
+        lum_p99 = percentile(lum, 99.0)
+        lum_p995 = percentile(lum, 99.5)
+        lum_max = percentile(lum, 100.0)
+        lum_positive_p01 = positive_percentile(lum, 1.0)
+
+        finite_rgb = frame[torch.isfinite(frame)]
+        max_rgb = float(finite_rgb.max().item()) if finite_rgb.numel() else 0.0
+        mean_rgb = float(finite_rgb.mean().item()) if finite_rgb.numel() else 0.0
+        black_fraction = float((lum <= EPSILON).float().mean().item()) if lum.numel() else 0.0
+        rgb_above_sdr_fraction = float((frame > sdr).float().mean().item()) if frame.numel() else 0.0
+        lum_above_sdr_fraction = float((lum > sdr).float().mean().item()) if lum.numel() else 0.0
+
+        dynamic_floor = lum_positive_p01 if lum_positive_p01 > EPSILON else lum_p01
+        headroom_p995 = _safe_stop_ratio(lum_p995, lum_p50)
+        headroom_max = _safe_stop_ratio(lum_max, lum_p50)
+        dynamic_range_p995 = _safe_stop_ratio(lum_p995, dynamic_floor)
+        dynamic_range_max = _safe_stop_ratio(lum_max, dynamic_floor)
+
+        exceeds_sdr = max_rgb > sdr or lum_p995 > sdr
+        has_headroom = headroom_p995 >= headroom_threshold
+        has_dynamic_range = dynamic_range_p995 >= dynamic_range_threshold
+        verdict = "pass" if exceeds_sdr and has_headroom and has_dynamic_range else "review"
+        reasons = []
+        if not exceeds_sdr:
+            reasons.append("does_not_exceed_sdr_reference")
+        if not has_headroom:
+            reasons.append("insufficient_highlight_headroom")
+        if not has_dynamic_range:
+            reasons.append("insufficient_dynamic_range")
+
+        frame_reports.append(
+            {
+                "frame": int(index),
+                "verdict": verdict,
+                "review_reasons": reasons,
+                "checks": {
+                    "exceeds_sdr_reference": bool(exceeds_sdr),
+                    "has_hdr_headroom": bool(has_headroom),
+                    "has_wide_dynamic_range": bool(has_dynamic_range),
+                },
+                "key_metrics": {
+                    "max_rgb": max_rgb,
+                    "lum_p50": lum_p50,
+                    "lum_p995": lum_p995,
+                    "hdr_headroom_p995_stops": headroom_p995,
+                    "dynamic_range_p995_over_positive_p01_stops": dynamic_range_p995,
+                    "rgb_above_sdr_fraction": rgb_above_sdr_fraction,
+                    "lum_above_sdr_fraction": lum_above_sdr_fraction,
+                    "black_fraction": black_fraction,
+                },
+                "luminance_percentiles": {
+                    "p01": lum_p01,
+                    "positive_p01": lum_positive_p01,
+                    "p05": lum_p05,
+                    "p10": lum_p10,
+                    "p50": lum_p50,
+                    "p90": lum_p90,
+                    "p95": lum_p95,
+                    "p99": lum_p99,
+                    "p995": lum_p995,
+                    "max": lum_max,
+                },
+                "extra_metrics": {
+                    "mean_rgb": mean_rgb,
+                    "hdr_headroom_max_stops": headroom_max,
+                    "dynamic_range_max_over_positive_p01_stops": dynamic_range_max,
+                },
+            }
+        )
+
+    pass_count = sum(1 for report in frame_reports if report["verdict"] == "pass")
+    frame_count = len(frame_reports)
+    verdict = "pass" if frame_count > 0 and pass_count == frame_count else "review"
+
+    return {
+        "decision": {
+            "verdict": verdict,
+            "pass_count": int(pass_count),
+            "frame_count": int(frame_count),
+            "pass_rule": "all_frames_must_pass",
+            "criteria": [
+                "max_rgb > sdr_reference OR lum_p995 > sdr_reference",
+                "hdr_headroom_p995_stops >= headroom_threshold_stops",
+                "dynamic_range_p995_over_positive_p01_stops >= dynamic_range_threshold_stops",
+            ],
+        },
+        "guide": {
+            "pass": "Every frame exceeds the SDR reference, has enough highlight headroom, and has enough useful dynamic range.",
+            "review": "At least one frame failed one or more criteria; inspect review_reasons and the exposure preview strip.",
+            "good_hdr_visual_check": "Lower exposure should reveal highlight detail; higher exposure should reveal shadow detail. Bright numbers alone are not enough.",
+        },
+        "thresholds": {
+            "sdr_reference": sdr,
+            "headroom_threshold_stops": headroom_threshold,
+            "dynamic_range_threshold_stops": dynamic_range_threshold,
+        },
+        "summary": frame_reports[0] if frame_count == 1 else {"frames": frame_reports},
+        "frames": frame_reports,
     }
 
 

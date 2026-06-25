@@ -1,12 +1,12 @@
-# ComfyUI X2HDR Ideogram4
+# ComfyUI X2HDR
 
 [English](README.md) | 中文
 
-这是一个自包含的 ComfyUI 自定义节点包，用于 Ideogram4 X2HDR 工作流。它可以把模型输出的 PU21 图像还原为线性 HDR RGB，保存 float OpenEXR 文件，提供内置交互式 HDR 调色 viewer，生成 tone-map 预览，并输出 HDR 指标。
+这是一个自包含的 ComfyUI 自定义节点包，用于通用 X2HDR/PU21 工作流。它可以把模型输出的 PU21 图像还原为线性 HDR RGB，保存 float OpenEXR 文件，提供内置交互式 HDR 调色 viewer，生成 tone-map 预览，并输出 HDR 指标。
 
 ## 节点
 
-- `X2HDR PU21 Decode`：将 Ideogram4 X2HDR 的 PU21 输出反解码为线性 float HDR RGB。
+- `X2HDR PU21 Decode`：将 X2HDR PU21 模型输出反解码为线性 float HDR RGB。
 - `X2HDR Save EXR`：将解码后的 HDR 图像保存为 `.exr`，并返回清理后的 HDR tensor 供后续节点继续使用。
 - `X2HDR Color Grade`：对线性 HDR 做调色，输出 LDR/HDR 结果，并打开内置交互式调色 viewer。
 - `X2HDR Tone Map Preview`：生成 ACES、Reinhard 或 Log 的 LDR 预览。
@@ -26,7 +26,7 @@ EXR linear HDR
 因此，`VAE Decode` 后不能直接用 PNG/JPG 当作最终 HDR 保存。那只是 PU21 空间预览图，不是真正的线性 HDR。正确链路应是：
 
 ```text
-Ideogram4 + X2HDR LoRA
+X2HDR model or LoRA
 -> VAE Decode
 -> X2HDR PU21 Decode
 -> X2HDR Save EXR
@@ -39,7 +39,7 @@ Ideogram4 + X2HDR LoRA
 将本目录放到：
 
 ```text
-ComfyUI/custom_nodes/comfyui-x2hdr-ideogram4
+ComfyUI/custom_nodes/comfyui-x2hdr
 ```
 
 然后重启 ComfyUI。节点会出现在：
@@ -105,7 +105,7 @@ clamp_pu21 = true
 示例 workflow scaffold：
 
 ```text
-examples/ideogram4_x2hdr_text2image.json
+examples/x2hdr_text2image.json
 ```
 
 ## 验证建议
