@@ -4,6 +4,12 @@ English | [中文](README_zh.md)
 
 Self-contained ComfyUI custom nodes for generic X2HDR/PU21 workflows. The package inverse-decodes PU21 model output into linear HDR RGB, writes float OpenEXR files, provides a built-in interactive HDR color-grading viewer, creates tone-mapped previews, and reports HDR metrics.
 
+This is an independent ComfyUI node package. It is not the official implementation from the X2HDR paper authors. The official X2HDR repository is:
+
+```text
+https://github.com/X2HDR/X2HDR
+```
+
 ## Nodes
 
 - `X2HDR PU21 Decode`: inverse-decodes X2HDR PU21 model output into linear float HDR RGB and returns decode metrics.
@@ -13,18 +19,22 @@ Self-contained ComfyUI custom nodes for generic X2HDR/PU21 workflows. The packag
 - `X2HDR Metrics`: returns luminance and RGB statistics as JSON.
 - `X2HDR Dynamic Range QA`: checks whether decoded HDR exceeds SDR/VAE range and creates a `-4/-2/0/+2/+4 EV` exposure preview strip.
 
-## Why This Exists
+## X2HDR Paper Background
 
-X2HDR training stores HDR images in PU21 space before VAE encoding:
+The X2HDR paper, [HDR Image Generation in a Perceptually Uniform Space](https://arxiv.org/abs/2602.04814), points out a practical mismatch: HDR images are normally stored as linear RGB, while pretrained text-to-image diffusion models are trained mostly on display-encoded LDR images. Linear HDR values have very different intensity and color statistics, so feeding them directly through an LDR-pretrained VAE causes poor reconstruction. This repository implements compatible ComfyUI utilities around that workflow, but it is not an official X2HDR release; see the official project at https://github.com/X2HDR/X2HDR.
+
+X2HDR bridges that gap by converting HDR training images into a perceptually uniform encoding such as PU21 or PQ. In the text-to-HDR setup, the VAE and text encoder are frozen, and only the denoiser is adapted with LoRA in that perceptually uniform space. At inference time, the model output after `VAE Decode` is still a PU21-space image representation, not linear HDR.
+
+The training-side representation is:
 
 ```text
 EXR linear HDR
--> scale_to_l_peak
+-> scale to target peak luminance
 -> PU21 encode [0, 1]
 -> VAE input
 ```
 
-A PNG or JPG saved directly after `VAE Decode` is only a PU21-space preview, not a real linear HDR image. The correct inference path is:
+A PNG or JPG saved directly after `VAE Decode` is therefore only a PU21-space preview. The correct inference path is:
 
 ```text
 X2HDR model or LoRA
@@ -92,7 +102,7 @@ target_percentile = 99.5
 clamp_pu21 = true
 ```
 
-Set `target_luminance` to `0` to disable percentile normalization and preserve the decoded scale. Use `input_range = minus1_1` only when the upstream tensor is centered in `[-1, 1]` instead of `[0, 1]`.
+These defaults follow the PU21 workflow described above: decode from `[0, 1]` PU21 space, apply the peak-luminance scale, then optionally normalize the decoded result for practical ComfyUI output. Set `target_luminance` to `0` to disable percentile normalization and preserve the raw decoded scale as much as possible. Use `input_range = minus1_1` only when the upstream tensor is centered in `[-1, 1]` instead of `[0, 1]`.
 
 ## Interactive HDR Color Grade
 
@@ -139,6 +149,13 @@ Connect decoded HDR to `X2HDR Dynamic Range QA` to confirm that the output is no
 
 `verdict = review` means at least one frame failed a check. Inspect `review_reasons`, per-frame metrics, and the exposure strip.
 
+## Acknowledgements
+
+Thanks to the X2HDR authors for the paper and official implementation:
+
+- Paper: https://arxiv.org/abs/2602.04814
+- Official repository: https://github.com/X2HDR/X2HDR
+
 ## Validation
 
 For parity testing, compare a known PU21 tensor against the reference HDR decode path using the same `l_peak`, `target_luminance`, and percentile settings.
@@ -148,14 +165,4 @@ Suggested tolerance:
 ```text
 max_abs_error < 1e-4
 mean_abs_error < 1e-5
-```
-
-Local smoke tests may be kept in an ignored `tests/` directory during development. They are not tracked in this repository release. If you keep a local copy, run them with the same Python environment used by ComfyUI, for example:
-
-```text
-python tests/decode_l_peak_smoke.py
-python tests/dynamic_range_qa_smoke.py
-python tests/auto_exposure_smoke.py
-python tests/cache_smoke.py
-python tests/preset_qa.py
 ```

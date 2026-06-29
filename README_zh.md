@@ -4,6 +4,12 @@
 
 这是一个自包含的 ComfyUI 自定义节点包，用于通用 X2HDR/PU21 工作流。它可以把模型输出的 PU21 图像反解码为线性 HDR RGB，保存 float OpenEXR 文件，提供内置交互式 HDR 调色 viewer，生成 tone-map 预览，并输出 HDR 指标。
 
+这是一个独立的 ComfyUI 节点包，不是 X2HDR 论文作者发布的官方实现。X2HDR 官方仓库位于：
+
+```text
+https://github.com/X2HDR/X2HDR
+```
+
 ## 节点
 
 - `X2HDR PU21 Decode`：将 X2HDR PU21 模型输出反解码为线性 float HDR RGB，并返回解码指标。
@@ -13,18 +19,22 @@
 - `X2HDR Metrics`：以 JSON 输出亮度和 RGB 统计指标。
 - `X2HDR Dynamic Range QA`：检查解码后的 HDR 是否超过 SDR/VAE 范围，并生成 `-4/-2/0/+2/+4 EV` 曝光预览条。
 
-## 为什么需要这些节点
+## X2HDR 论文背景
 
-X2HDR 训练链路中，HDR 图像不是直接作为普通 LDR 图像训练，而是先进入 PU21 编码空间：
+X2HDR 论文 [HDR Image Generation in a Perceptually Uniform Space](https://arxiv.org/abs/2602.04814) 指出一个核心问题：HDR 图像通常以线性 RGB 表示，而现有文生图扩散模型大多在显示编码的 LDR 图像上预训练。线性 HDR 的亮度和颜色统计与 LDR 图像差异很大，直接送入 LDR 预训练 VAE 会导致重建质量明显下降。本仓库围绕这一工作流提供兼容的 ComfyUI 工具，但不是 X2HDR 官方发布；官方项目见 https://github.com/X2HDR/X2HDR。
+
+X2HDR 的做法是先把 HDR 训练图像转换到 PU21 或 PQ 这类感知均匀空间。在 text-to-HDR 设置中，VAE 和文本编码器保持冻结，只在这个感知均匀空间中用 LoRA 微调 denoiser。推理时，`VAE Decode` 后得到的仍然是 PU21 空间中的图像表示，而不是线性 HDR。
+
+训练侧表示可以理解为：
 
 ```text
 EXR linear HDR
--> scale_to_l_peak
+-> scale to target peak luminance
 -> PU21 encode [0, 1]
 -> VAE input
 ```
 
-因此，`VAE Decode` 后不能直接用 PNG/JPG 当作最终 HDR 保存。那只是 PU21 空间预览图，不是真正的线性 HDR。正确链路应是：
+因此，`VAE Decode` 后不能直接用 PNG/JPG 当作最终 HDR 保存。那只是 PU21 空间预览图，不是真正的线性 HDR。正确推理链路应是：
 
 ```text
 X2HDR model or LoRA
@@ -92,7 +102,7 @@ target_percentile = 99.5
 clamp_pu21 = true
 ```
 
-如果希望保留更原始的 HDR 强度，可以把 `target_luminance` 设为 `0`，关闭百分位归一化。只有当上游 tensor 是 `[-1, 1]` 居中范围时，才需要使用 `input_range = minus1_1`。
+这些默认值对应上面的 PU21 工作流：从 `[0, 1]` PU21 空间解码，应用峰值亮度尺度，然后按 ComfyUI 实用输出需求可选地整理解码尺度。如果希望尽量保留原始解码强度，可以把 `target_luminance` 设为 `0`，关闭百分位归一化。只有当上游 tensor 是 `[-1, 1]` 居中范围时，才需要使用 `input_range = minus1_1`。
 
 ## 交互式 HDR 调色 Viewer
 
@@ -139,6 +149,13 @@ viewer 功能：
 
 `verdict = review` 表示至少一帧没有通过检查。此时应查看 `review_reasons`、逐帧 metrics 和曝光预览条。
 
+## 致谢
+
+感谢 X2HDR 作者发布论文和官方实现：
+
+- 论文：https://arxiv.org/abs/2602.04814
+- 官方仓库：https://github.com/X2HDR/X2HDR
+
 ## 验证建议
 
 如需和参考 HDR decode 链路对齐，可以使用同一个 PU21 tensor，并保持 `l_peak`、`target_luminance`、`target_percentile` 一致。
@@ -148,14 +165,4 @@ viewer 功能：
 ```text
 max_abs_error < 1e-4
 mean_abs_error < 1e-5
-```
-
-本地开发时可以把 smoke tests 放在已忽略的 `tests/` 目录中。该目录不随当前仓库发布。如果你本地保留了这些脚本，可以在当前目录下用 ComfyUI 相同的 Python 环境运行，例如：
-
-```text
-python tests/decode_l_peak_smoke.py
-python tests/dynamic_range_qa_smoke.py
-python tests/auto_exposure_smoke.py
-python tests/cache_smoke.py
-python tests/preset_qa.py
 ```
