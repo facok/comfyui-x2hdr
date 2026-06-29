@@ -45,6 +45,8 @@ X2HDR model or LoRA
 -> Save Image preview PNG，或用 X2HDR Save EXR 保存调色后的 HDR
 ```
 
+重要：这些节点不能把普通 SDR 模型输出“转换成 HDR”。`X2HDR PU21 Decode` 只负责对已经处在 X2HDR/PU21 表示中的图像做反变换。如果上游模型或 LoRA 没有按 PU21 编码 HDR 的方式训练，直接接这个节点会得到错误的颜色和亮度，不会得到真正的 HDR。
+
 ## 安装
 
 将本目录放到：
@@ -69,11 +71,12 @@ ComfyUI 已经提供这些节点使用的基础运行环境，包括 `torch`、`
 
 ## 典型工作流
 
-1. 将模型的 `VAE Decode` `IMAGE` 输出接到 `X2HDR PU21 Decode`。
-2. 将 `hdr_image` 接到 `X2HDR Dynamic Range QA`，确认结果确实包含可用 HDR 范围。
-3. 用 `X2HDR Save EXR` 保存解码后的线性图像。
-4. 用 `X2HDR Color Grade` 做显示渲染或创意调色。
-5. 用普通 `Save Image` 保存 `graded_display`，或用 `X2HDR Save EXR` 保存 `graded_linear` 作为调色后的 HDR 输出。
+1. 使用按 X2HDR/PU21 方式训练的模型或 LoRA，例如下面的 Krea2 X2HDR LoRA。
+2. 将该工作流的 `VAE Decode` `IMAGE` 输出接到 `X2HDR PU21 Decode`。
+3. 将 `hdr_image` 接到 `X2HDR Dynamic Range QA`，确认结果确实包含可用 HDR 范围。
+4. 用 `X2HDR Save EXR` 保存解码后的线性图像。
+5. 用 `X2HDR Color Grade` 做显示渲染或创意调色。
+6. 用普通 `Save Image` 保存 `graded_display`，或用 `X2HDR Save EXR` 保存 `graded_linear` 作为调色后的 HDR 输出。
 
 示例 workflow scaffold 位于：
 
@@ -89,7 +92,7 @@ Krea2 X2HDR LoRA 位于：
 https://huggingface.co/F16/x2hdr-krea2
 ```
 
-可配合 Krea-2-Raw 或 Krea-2-Turbo 使用。生成后需要先将 `VAE Decode` 输出接入 `X2HDR PU21 Decode`，再保存 EXR。
+可配合 Krea-2-Raw 或 Krea-2-Turbo 使用。生成后需要先将 `VAE Decode` 输出接入 `X2HDR PU21 Decode`，再保存 EXR。必须配合该类 LoRA 使用的原因是：LoRA 让 denoiser 学会输出 PU21 编码的 HDR 表示；节点本身无法从普通 LDR 模型输出中推断出 HDR 数据。
 
 ## 默认解码参数
 

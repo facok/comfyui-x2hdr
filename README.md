@@ -45,6 +45,8 @@ X2HDR model or LoRA
 -> Save Image preview PNG, or X2HDR Save EXR for graded HDR
 ```
 
+Important: these nodes do not convert a normal SDR model output into HDR. `X2HDR PU21 Decode` only performs the inverse transform for an image that is already in the X2HDR/PU21 representation. If the upstream model or LoRA was not trained to generate PU21-encoded HDR images, decoding it with this node will produce incorrect colors and luminance, not real HDR.
+
 ## Installation
 
 Place this folder under:
@@ -69,11 +71,12 @@ ComfyUI already provides the base runtime used by these nodes, including `torch`
 
 ## Typical Workflow
 
-1. Connect your model's `VAE Decode` `IMAGE` output to `X2HDR PU21 Decode`.
-2. Send `hdr_image` to `X2HDR Dynamic Range QA` to verify that the result contains useful HDR range.
-3. Save the decoded linear image with `X2HDR Save EXR`.
-4. Use `X2HDR Color Grade` for display rendering or creative adjustment.
-5. Save `graded_display` with normal `Save Image`, or save `graded_linear` with `X2HDR Save EXR` if you need graded HDR output.
+1. Use an X2HDR/PU21-trained model or LoRA, such as the Krea2 X2HDR LoRA below.
+2. Connect that workflow's `VAE Decode` `IMAGE` output to `X2HDR PU21 Decode`.
+3. Send `hdr_image` to `X2HDR Dynamic Range QA` to verify that the result contains useful HDR range.
+4. Save the decoded linear image with `X2HDR Save EXR`.
+5. Use `X2HDR Color Grade` for display rendering or creative adjustment.
+6. Save `graded_display` with normal `Save Image`, or save `graded_linear` with `X2HDR Save EXR` if you need graded HDR output.
 
 An example workflow scaffold is included at:
 
@@ -89,7 +92,7 @@ A Krea2 X2HDR LoRA is available at:
 https://huggingface.co/F16/x2hdr-krea2
 ```
 
-Use it with Krea-2-Raw or Krea-2-Turbo, then decode the `VAE Decode` output with `X2HDR PU21 Decode` before saving EXR.
+Use it with Krea-2-Raw or Krea-2-Turbo, then decode the `VAE Decode` output with `X2HDR PU21 Decode` before saving EXR. The LoRA is required because it teaches the denoiser to output a PU21-encoded HDR representation; the node alone cannot infer HDR data from a normal LDR model output.
 
 ## Decode Defaults
 
