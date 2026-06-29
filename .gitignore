@@ -6,9 +6,10 @@ __pycache__/
 .venv/
 venv/
 
+tests/
+
 *.exr
 *.png
 *.jpg
 *.jpeg
 *.webp
-
