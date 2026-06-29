@@ -71,6 +71,16 @@ ComfyUI 已经提供这些节点使用的基础运行环境，包括 `torch`、`
 examples/x2hdr_text2image.json
 ```
 
+## Krea2 X2HDR LoRA
+
+Krea2 X2HDR LoRA 位于：
+
+```text
+https://huggingface.co/F16/x2hdr-krea2
+```
+
+可配合 Krea-2-Raw 或 Krea-2-Turbo 使用。生成后需要先将 `VAE Decode` 输出接入 `X2HDR PU21 Decode`，再保存 EXR。
+
 ## 默认解码参数
 
 ```text
@@ -140,7 +150,7 @@ max_abs_error < 1e-4
 mean_abs_error < 1e-5
 ```
 
-本地 smoke tests 位于 `tests/`。在当前目录下，用 ComfyUI 相同的 Python 环境运行，例如：
+本地开发时可以把 smoke tests 放在已忽略的 `tests/` 目录中。该目录不随当前仓库发布。如果你本地保留了这些脚本，可以在当前目录下用 ComfyUI 相同的 Python 环境运行，例如：
 
 ```text
 python tests/decode_l_peak_smoke.py

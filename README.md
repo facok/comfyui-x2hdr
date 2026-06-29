@@ -71,6 +71,16 @@ An example workflow scaffold is included at:
 examples/x2hdr_text2image.json
 ```
 
+## Krea2 X2HDR LoRA
+
+A Krea2 X2HDR LoRA is available at:
+
+```text
+https://huggingface.co/F16/x2hdr-krea2
+```
+
+Use it with Krea-2-Raw or Krea-2-Turbo, then decode the `VAE Decode` output with `X2HDR PU21 Decode` before saving EXR.
+
 ## Decode Defaults
 
 ```text
@@ -140,7 +150,7 @@ max_abs_error < 1e-4
 mean_abs_error < 1e-5
 ```
 
-Local smoke tests are available under `tests/`. From this folder, run the scripts with the same Python environment used by ComfyUI, for example:
+Local smoke tests may be kept in an ignored `tests/` directory during development. They are not tracked in this repository release. If you keep a local copy, run them with the same Python environment used by ComfyUI, for example:
 
 ```text
 python tests/decode_l_peak_smoke.py
