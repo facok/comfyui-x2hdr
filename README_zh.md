@@ -2,15 +2,16 @@
 
 [English](README.md) | 中文
 
-这是一个自包含的 ComfyUI 自定义节点包，用于通用 X2HDR/PU21 工作流。它可以把模型输出的 PU21 图像还原为线性 HDR RGB，保存 float OpenEXR 文件，提供内置交互式 HDR 调色 viewer，生成 tone-map 预览，并输出 HDR 指标。
+这是一个自包含的 ComfyUI 自定义节点包，用于通用 X2HDR/PU21 工作流。它可以把模型输出的 PU21 图像反解码为线性 HDR RGB，保存 float OpenEXR 文件，提供内置交互式 HDR 调色 viewer，生成 tone-map 预览，并输出 HDR 指标。
 
 ## 节点
 
-- `X2HDR PU21 Decode`：将 X2HDR PU21 模型输出反解码为线性 float HDR RGB。
-- `X2HDR Save EXR`：将解码后的 HDR 图像保存为 `.exr`，并返回清理后的 HDR tensor 供后续节点继续使用。
-- `X2HDR Color Grade`：对线性 HDR 做调色，输出 LDR/HDR 结果，并打开内置交互式调色 viewer。
+- `X2HDR PU21 Decode`：将 X2HDR PU21 模型输出反解码为线性 float HDR RGB，并返回解码指标。
+- `X2HDR Save EXR`：将线性 HDR 图像保存为 `.exr`，并返回清理后的 HDR tensor 供后续节点继续使用。
+- `X2HDR Color Grade`：对线性 HDR 做调色，同时输出显示用 LDR 和线性 HDR，并打开内置交互式调色 viewer。
 - `X2HDR Tone Map Preview`：生成 ACES、Reinhard 或 Log 的 LDR 预览。
 - `X2HDR Metrics`：以 JSON 输出亮度和 RGB 统计指标。
+- `X2HDR Dynamic Range QA`：检查解码后的 HDR 是否超过 SDR/VAE 范围，并生成 `-4/-2/0/+2/+4 EV` 曝光预览条。
 
 ## 为什么需要这些节点
 
@@ -48,38 +49,27 @@ ComfyUI/custom_nodes/comfyui-x2hdr
 image/HDR/X2HDR
 ```
 
-## 依赖
+## 最少额外依赖
 
-当前 ComfyUI portable Python 环境通常已经包含需要的运行包：
+ComfyUI 已经提供这些节点使用的基础运行环境，包括 `torch`、`numpy`、`Pillow`、`aiohttp` 和 ComfyUI 服务端模块。为了避免和 ComfyUI 依赖重复，本节点包只声明不假定由 ComfyUI 提供的额外库：
 
-- `torch`
-- `numpy`
-- `PIL`
 - `av`
-- `opencv-python`，仅作为 EXR 写入 fallback
 
-`X2HDR Save EXR` 优先使用 PyAV 写 EXR，和 ComfyUI 的高级图像导出路径一致。OpenCV 只作为备用路径。
+`av` 用于写 OpenEXR。`opencv-python` 是可选依赖，只在当前环境里的 PyAV 无法写 EXR 时作为 fallback 使用。
 
-## 交互式 HDR 调色 Viewer
+## 典型工作流
 
-先运行一次 `X2HDR Color Grade`，再点击节点上的 `Open X2HDR color grade`。
+1. 将模型的 `VAE Decode` `IMAGE` 输出接到 `X2HDR PU21 Decode`。
+2. 将 `hdr_image` 接到 `X2HDR Dynamic Range QA`，确认结果确实包含可用 HDR 范围。
+3. 用 `X2HDR Save EXR` 保存解码后的线性图像。
+4. 用 `X2HDR Color Grade` 做显示渲染或创意调色。
+5. 用普通 `Save Image` 保存 `graded_display`，或用 `X2HDR Save EXR` 保存 `graded_linear` 作为调色后的 HDR 输出。
 
-这个 viewer 完全由本节点包实现，不依赖任何第三方 ComfyUI 插件。它把 HDR tensor 缓存在 ComfyUI 服务端，调参时向本节点包的后端接口请求 tone-map 预览帧。
+示例 workflow scaffold 位于：
 
-viewer 功能：
-
-- canvas 平移、缩放、适配窗口和 1:1 检查
-- 实时调整曝光、tone mapping、白平衡、对比度、lift/gamma/gain/offset、阴影/高光、饱和度、vibrance、色相偏移和 false color
-- source / graded / split 对比
-- RGB 直方图
-- HDR RGB 和显示 RGB 像素采样
-- 批量图像帧切换
-- 点击 `Save` 后把最终参数写回节点 widgets
-
-节点输出：
-
-- `graded_display`：用于预览或普通 `Save Image` 的 LDR 显示图。
-- `graded_linear`：用于继续 HDR 处理或再次保存 EXR 的线性 HDR 图。
+```text
+examples/x2hdr_text2image.json
+```
 
 ## 默认解码参数
 
@@ -92,7 +82,30 @@ target_percentile = 99.5
 clamp_pu21 = true
 ```
 
-如果希望保留更原始的 HDR 强度，可以把 `target_luminance` 设为 `0`，关闭百分位归一化。
+如果希望保留更原始的 HDR 强度，可以把 `target_luminance` 设为 `0`，关闭百分位归一化。只有当上游 tensor 是 `[-1, 1]` 居中范围时，才需要使用 `input_range = minus1_1`。
+
+## 交互式 HDR 调色 Viewer
+
+先运行一次 `X2HDR Color Grade`，再点击节点上的 `Open X2HDR color grade`。
+
+这个 viewer 完全由本节点包实现，不依赖任何第三方 ComfyUI 插件。它把 HDR tensor 缓存在 ComfyUI 服务端，调参时向本节点包的后端接口请求 tone-map 预览帧。
+
+viewer 功能：
+
+- canvas 平移、缩放、适配窗口和 1:1 检查
+- 实时调整曝光、自动曝光、tone mapping、soft clip、白平衡、对比度、lift/gamma/gain/offset、阴影/高光、饱和度、vibrance、色相偏移、density、black lift、分离色调、色彩矩阵和 false color
+- source / graded / split 对比
+- RGB 直方图
+- HDR RGB 和显示 RGB 像素采样
+- 批量图像帧切换
+- viewer 内置 factory presets 和用户 presets
+- 点击 `Save` 后把最终参数写回节点 widgets
+- `Save PNG` 和 `Save EXR` 会通过本节点包的后端接口导出当前 viewer 帧
+
+节点输出：
+
+- `graded_display`：用于预览或普通 `Save Image` 的 LDR 显示图。
+- `graded_linear`：用于继续 HDR 处理或再次保存 EXR 的线性 HDR 图。
 
 ## 输出说明
 
@@ -100,13 +113,21 @@ clamp_pu21 = true
 
 `X2HDR Save EXR` 保存的是线性 float HDR RGB，不做 gamma，也不做 tone-map。它的第一个输出是实际写出的、已清理的 HDR 图像，可以继续接到下游 HDR 节点，不需要重新读取 EXR。
 
-`X2HDR Tone Map Preview` 会返回 `preview`、`preview_aces`、`preview_reinhard` 和 `preview_log`。第一个 `preview` 输出由 `method` 参数决定。
+`X2HDR Tone Map Preview` 会返回 `preview`、`preview_aces`、`preview_reinhard` 和 `preview_log`。第一个 `preview` 输出由 `method` 参数决定。`method = all` 时，第一个输出仍为 ACES，同时也会提供三个具名预览输出。
 
-示例 workflow scaffold：
+`X2HDR Metrics` 返回每帧亮度和 RGB 统计指标的 JSON。
 
-```text
-examples/x2hdr_text2image.json
-```
+## Dynamic Range QA
+
+将解码后的 HDR 接到 `X2HDR Dynamic Range QA`，可以确认输出不是“装在 float tensor 里的 SDR 范围图”。它会报告 `max_rgb`、亮度百分位、高光 headroom stops、动态范围 stops，以及图像是否超过 SDR 参考值。节点还会生成 `-4/-2/0/+2/+4 EV` 预览条，方便直观看高光和阴影是否有可恢复细节。
+
+`verdict = pass` 表示每一帧都通过以下三项检查：
+
+- `max_rgb > sdr_reference` 或 `lum_p995 > sdr_reference`
+- `hdr_headroom_p995_stops >= headroom_threshold_stops`
+- `dynamic_range_p995_over_positive_p01_stops >= dynamic_range_threshold_stops`
+
+`verdict = review` 表示至少一帧没有通过检查。此时应查看 `review_reasons`、逐帧 metrics 和曝光预览条。
 
 ## 验证建议
 
@@ -117,4 +138,14 @@ examples/x2hdr_text2image.json
 ```text
 max_abs_error < 1e-4
 mean_abs_error < 1e-5
+```
+
+本地 smoke tests 位于 `tests/`。在当前目录下，用 ComfyUI 相同的 Python 环境运行，例如：
+
+```text
+python tests/decode_l_peak_smoke.py
+python tests/dynamic_range_qa_smoke.py
+python tests/auto_exposure_smoke.py
+python tests/cache_smoke.py
+python tests/preset_qa.py
 ```

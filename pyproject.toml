@@ -5,9 +5,11 @@ description = "ComfyUI nodes for generic X2HDR PU21 decode, EXR export, tone-map
 requires-python = ">=3.10"
 dependencies = [
   "av",
-  "numpy",
+]
+
+[project.optional-dependencies]
+opencv-fallback = [
   "opencv-python",
-  "torch",
 ]
 
 [tool.black]
