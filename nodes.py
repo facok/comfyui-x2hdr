@@ -12,6 +12,7 @@ from .hdr_utils import (
     compute_metrics,
     compute_dynamic_range_qa,
     decode_image_to_hdr,
+    decode_logc_image,
     save_exr_image,
     tone_map,
 )
@@ -231,6 +232,51 @@ class X2HDRPU21Decode:
         )
         metrics_json = json.dumps(metrics, indent=2, sort_keys=True)
         return (hdr, metrics_json)
+
+
+class _X2HDRLogCDecode:
+    CURVE = ""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "input_range": (INPUT_RANGE_OPTIONS, {"default": "0_1"}),
+                "clamp_logc": (
+                    "BOOLEAN",
+                    {
+                        "default": True,
+                        "tooltip": "Clamp encoded LogC values to [0, 1] before decoding.",
+                    },
+                ),
+            }
+        }
+
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("hdr_image", "metrics_json")
+    FUNCTION = "decode"
+    CATEGORY = "image/HDR/X2HDR"
+
+    def decode(self, image, input_range, clamp_logc):
+        hdr, metrics = decode_logc_image(
+            image,
+            curve=self.CURVE,
+            input_range=input_range,
+            clamp_logc=clamp_logc,
+        )
+        metrics_json = json.dumps(metrics, indent=2, sort_keys=True)
+        return (hdr, metrics_json)
+
+
+class X2HDRLogC3Decode(_X2HDRLogCDecode):
+    CURVE = "logc3"
+    DESCRIPTION = "Decodes ARRI LogC3 EI 800 into scene-linear HDR while retaining source primaries."
+
+
+class X2HDRLogC4Decode(_X2HDRLogCDecode):
+    CURVE = "logc4"
+    DESCRIPTION = "Decodes ARRI LogC4 into scene-linear HDR while retaining source primaries."
 
 
 class X2HDRSaveEXR:
@@ -678,6 +724,8 @@ class X2HDRDynamicRangeQA:
 
 NODE_CLASS_MAPPINGS = {
     "X2HDRPU21Decode": X2HDRPU21Decode,
+    "X2HDRLogC3Decode": X2HDRLogC3Decode,
+    "X2HDRLogC4Decode": X2HDRLogC4Decode,
     "X2HDRSaveEXR": X2HDRSaveEXR,
     "X2HDRToneMapPreview": X2HDRToneMapPreview,
     "X2HDRColorGrade": X2HDRColorGrade,
@@ -687,6 +735,8 @@ NODE_CLASS_MAPPINGS = {
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "X2HDRPU21Decode": "X2HDR PU21 Decode",
+    "X2HDRLogC3Decode": "X2HDR LogC3 Decode",
+    "X2HDRLogC4Decode": "X2HDR LogC4 Decode",
     "X2HDRSaveEXR": "X2HDR Save EXR",
     "X2HDRToneMapPreview": "X2HDR Tone Map Preview",
     "X2HDRColorGrade": "X2HDR Color Grade",

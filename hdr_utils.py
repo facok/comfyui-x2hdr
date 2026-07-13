@@ -13,6 +13,20 @@ os.environ.setdefault("OPENCV_IO_ENABLE_OPENEXR", "1")
 
 PU21_A = 0.001908
 PU21_B = 0.0078
+LOGC3_A = 5.555556
+LOGC3_B = 0.052272
+LOGC3_C = 0.247190
+LOGC3_D = 0.385537
+LOGC3_E = 5.367655
+LOGC3_F = 0.092809
+LOGC3_CUT = 0.010591
+LOGC4_A = (2.0 ** 18 - 16.0) / 117.45
+LOGC4_B = (1023.0 - 95.0) / 1023.0
+LOGC4_C = 95.0 / 1023.0
+LOGC4_S = (
+    7.0 * math.log(2.0) * 2.0 ** (7.0 - 14.0 * LOGC4_C / LOGC4_B)
+) / (LOGC4_A * LOGC4_B)
+LOGC4_T = (2.0 ** (-14.0 * LOGC4_C / LOGC4_B + 6.0) - 64.0) / LOGC4_A
 L_MIN = 0.005
 L_MAX = 10000.0
 L_MIN_LOG2 = math.log2(L_MIN)
@@ -64,6 +78,93 @@ def pu21_decode(pu21: torch.Tensor, clamp_pu21: bool = True) -> torch.Tensor:
         + torch.sqrt(torch.clamp(discriminant, min=0.0))
     ) / (2.0 * PU21_A)
     return torch.clamp(torch.pow(2.0, exponent), L_MIN, L_MAX)
+
+
+def image_to_logc(
+    image: torch.Tensor,
+    input_range: str = "0_1",
+    clamp_logc: bool = True,
+) -> torch.Tensor:
+    """Convert a ComfyUI IMAGE-like tensor into RGB LogC code values."""
+    if not isinstance(image, torch.Tensor):
+        raise TypeError("image must be a torch.Tensor")
+
+    logc = image.to(dtype=torch.float32)
+    if input_range == "minus1_1":
+        logc = (logc + 1.0) * 0.5
+    elif input_range != "0_1":
+        raise ValueError(f"Unsupported input_range: {input_range}")
+
+    if logc.ndim != 4:
+        raise ValueError(f"Expected a 4D image tensor, got shape {tuple(logc.shape)}")
+
+    if logc.shape[-1] not in (1, 3, 4) and logc.shape[1] in (1, 3, 4):
+        logc = logc.movedim(1, -1)
+
+    if logc.shape[-1] == 1:
+        logc = logc.repeat_interleave(3, dim=-1)
+    elif logc.shape[-1] > 3:
+        logc = logc[..., :3]
+
+    if logc.shape[-1] != 3:
+        raise ValueError(f"Expected an RGB image tensor, got shape {tuple(logc.shape)}")
+
+    if clamp_logc:
+        logc = torch.clamp(logc, 0.0, 1.0)
+    return logc
+
+
+def logc3_decode(logc: torch.Tensor, clamp_logc: bool = True) -> torch.Tensor:
+    """Decode ARRI LogC3 EI 800 code values into scene-linear RGB."""
+    value = logc.to(dtype=torch.float32)
+    if clamp_logc:
+        value = torch.clamp(value, 0.0, 1.0)
+
+    cut_log = LOGC3_E * LOGC3_CUT + LOGC3_F
+    linear_log = (torch.pow(10.0, (value - LOGC3_D) / LOGC3_C) - LOGC3_B) / LOGC3_A
+    linear_toe = (value - LOGC3_F) / LOGC3_E
+    return torch.where(value >= cut_log, linear_log, linear_toe)
+
+
+def logc4_decode(logc: torch.Tensor, clamp_logc: bool = True) -> torch.Tensor:
+    """Decode ARRI LogC4 code values into scene-linear RGB."""
+    value = logc.to(dtype=torch.float32)
+    if clamp_logc:
+        value = torch.clamp(value, 0.0, 1.0)
+
+    exponent = 14.0 * (value - LOGC4_C) / LOGC4_B + 6.0
+    linear_log = (torch.pow(2.0, exponent) - 64.0) / LOGC4_A
+    linear_toe = value * LOGC4_S + LOGC4_T
+    # ARRI defines the inverse branch at code value 0; this keeps the curve continuous.
+    return torch.where(value >= 0.0, linear_log, linear_toe)
+
+
+def decode_logc_image(
+    image: torch.Tensor,
+    curve: str,
+    input_range: str = "0_1",
+    clamp_logc: bool = True,
+) -> tuple[torch.Tensor, dict[str, Any]]:
+    """Decode a ComfyUI IMAGE from LogC3 or LogC4 into scene-linear HDR."""
+    curve_key = str(curve).lower()
+    decoders = {
+        "logc3": logc3_decode,
+        "logc4": logc4_decode,
+    }
+    if curve_key not in decoders:
+        raise ValueError(f"Unsupported LogC curve: {curve}")
+
+    logc = image_to_logc(image, input_range=input_range, clamp_logc=clamp_logc)
+    hdr = decoders[curve_key](logc, clamp_logc=False).contiguous()
+    metrics = compute_metrics(hdr)
+    metrics.update(
+        {
+            "curve": curve_key,
+            "input_range": str(input_range),
+            "clamp_logc": bool(clamp_logc),
+        }
+    )
+    return hdr, metrics
 
 
 def luminance(hdr: torch.Tensor) -> torch.Tensor:

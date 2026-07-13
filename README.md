@@ -2,7 +2,7 @@
 
 English | [中文](README_zh.md)
 
-Self-contained ComfyUI custom nodes for generic X2HDR/PU21 workflows. The package inverse-decodes PU21 model output into linear HDR RGB, writes float OpenEXR files, provides a built-in interactive HDR color-grading viewer, creates tone-mapped previews, and reports HDR metrics.
+Self-contained ComfyUI custom nodes for generic X2HDR workflows. The package inverse-decodes PU21, ARRI LogC3, and ARRI LogC4 model output into linear HDR RGB, writes float OpenEXR files, provides a built-in interactive HDR color-grading viewer, creates tone-mapped previews, and reports HDR metrics.
 
 This is an independent ComfyUI node package. It is not the official implementation from the X2HDR paper authors. The official X2HDR repository is:
 
@@ -13,6 +13,8 @@ https://github.com/X2HDR/X2HDR
 ## Nodes
 
 - `X2HDR PU21 Decode`: inverse-decodes X2HDR PU21 model output into linear float HDR RGB and returns decode metrics.
+- `X2HDR LogC3 Decode`: decodes ARRI LogC3 EI 800 image data into scene-linear float HDR RGB.
+- `X2HDR LogC4 Decode`: decodes ARRI LogC4 image data into scene-linear float HDR RGB with wider highlight headroom than LogC3.
 - `X2HDR Save EXR`: saves linear HDR images as `.exr` files and returns the sanitized HDR tensor for downstream nodes.
 - `X2HDR Color Grade`: grades linear HDR, outputs both display LDR and linear HDR, and opens the built-in interactive grading viewer.
 - `X2HDR Tone Map Preview`: creates ACES, Reinhard, or log LDR previews.
@@ -45,7 +47,7 @@ X2HDR model or LoRA
 -> Save Image preview PNG, or X2HDR Save EXR for graded HDR
 ```
 
-Important: these nodes do not convert a normal SDR model output into HDR. `X2HDR PU21 Decode` only performs the inverse transform for an image that is already in the X2HDR/PU21 representation. If the upstream model or LoRA was not trained to generate PU21-encoded HDR images, decoding it with this node will produce incorrect colors and luminance, not real HDR.
+Important: these nodes do not convert a normal SDR model output into HDR. Each decode node only inverts its named representation. If the upstream model or LoRA was not trained with matching PU21, LogC3, or LogC4 targets, decoding it will produce incorrect colors and luminance, not real HDR.
 
 ## Installation
 
@@ -71,8 +73,8 @@ ComfyUI already provides the base runtime used by these nodes, including `torch`
 
 ## Typical Workflow
 
-1. Use an X2HDR/PU21-trained model or LoRA, such as the Krea2 X2HDR LoRA below.
-2. Connect that workflow's `VAE Decode` `IMAGE` output to `X2HDR PU21 Decode`.
+1. Use an HDR model or LoRA trained with PU21, LogC3, or LogC4 targets.
+2. Connect that workflow's `VAE Decode` `IMAGE` output to the matching decode node. The Krea2 X2HDR LoRA below uses `X2HDR PU21 Decode`.
 3. Send `hdr_image` to `X2HDR Dynamic Range QA` to verify that the result contains useful HDR range.
 4. Save the decoded linear image with `X2HDR Save EXR`.
 5. Use `X2HDR Color Grade` for display rendering or creative adjustment.
@@ -107,6 +109,14 @@ clamp_pu21 = true
 
 These defaults follow the PU21 workflow described above: decode from `[0, 1]` PU21 space, apply the peak-luminance scale, then optionally normalize the decoded result for practical ComfyUI output. Set `target_luminance` to `0` to disable percentile normalization and preserve the raw decoded scale as much as possible. Use `input_range = minus1_1` only when the upstream tensor is centered in `[-1, 1]` instead of `[0, 1]`.
 
+## LogC3 / LogC4 Decode
+
+Both LogC nodes default to `input_range = 0_1` and `clamp_logc = true`. They apply only the matching camera transfer-function inverse; no peak scaling or percentile normalization is added. Use `minus1_1` only for an upstream tensor centered in `[-1, 1]`.
+
+`X2HDR LogC3 Decode` uses the ARRI LogC3 EI 800 curve and reaches about `55.1` at encoded value `1`. `X2HDR LogC4 Decode` uses the ARRI LogC4 curve and reaches about `469.8`, providing roughly three more stops of highlight headroom. Pick the curve used to create the model or LoRA training targets. A mismatched decoder can produce plausible previews while returning incorrect scene-linear values.
+
+These nodes invert the transfer curve per channel; they do not apply an AWG3/AWG4 gamut matrix. The decoded tensor retains the upstream RGB primaries until a separate color-space conversion is applied.
+
 ## Interactive HDR Color Grade
 
 Run `X2HDR Color Grade` once, then click `Open X2HDR color grade` on the node.
@@ -132,7 +142,7 @@ The node outputs:
 
 ## Output Notes
 
-`X2HDR PU21 Decode` returns a ComfyUI `IMAGE` tensor containing float32 linear HDR values. Values greater than `1.0` are expected.
+The PU21 and LogC decode nodes return ComfyUI `IMAGE` tensors containing float32 linear HDR values. Values greater than `1.0` are expected. LogC may also decode code values below reference black to negative linear values; downstream `X2HDR Save EXR` can clamp them when `clamp_negative` is enabled.
 
 `X2HDR Save EXR` writes linear float HDR RGB without gamma correction or tone mapping. Its first output is the sanitized HDR image that was written, so it can be chained into downstream HDR nodes without re-reading the EXR.
 
@@ -159,11 +169,15 @@ Thanks to the X2HDR authors for the paper and official implementation:
 - Paper: https://arxiv.org/abs/2602.04814
 - Official repository: https://github.com/X2HDR/X2HDR
 
+The LogC nodes were implemented with reference to the MIT-licensed [ComfyUI_Gear](https://github.com/oumad/ComfyUI_Gear) nodes and ARRI transfer-function definitions. The LogC4 inverse uses ARRI's continuous branch boundary at encoded value `0`.
+
 ## Validation
 
 For parity testing, compare a known PU21 tensor against the reference HDR decode path using the same `l_peak`, `target_luminance`, and percentile settings.
 
-Suggested tolerance:
+LogC golden values, curve continuity, tensor layout, node registration, and metrics output are covered by `tests/logc_decode_smoke.py`.
+
+Suggested PU21 tolerance:
 
 ```text
 max_abs_error < 1e-4

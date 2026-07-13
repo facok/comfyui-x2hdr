@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-x2hdr"
 version = "0.1.0"
-description = "ComfyUI nodes for generic X2HDR PU21 decode, EXR export, tone-map previews, color grading, and metrics."
+description = "ComfyUI nodes for PU21/LogC HDR decode, EXR export, tone-map previews, color grading, and metrics."
 requires-python = ">=3.10"
 dependencies = [
   "av",

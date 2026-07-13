@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-这是一个自包含的 ComfyUI 自定义节点包，用于通用 X2HDR/PU21 工作流。它可以把模型输出的 PU21 图像反解码为线性 HDR RGB，保存 float OpenEXR 文件，提供内置交互式 HDR 调色 viewer，生成 tone-map 预览，并输出 HDR 指标。
+这是一个自包含的 ComfyUI 自定义节点包，用于通用 X2HDR 工作流。它可以把模型输出的 PU21、ARRI LogC3 和 ARRI LogC4 图像反解码为线性 HDR RGB，保存 float OpenEXR 文件，提供内置交互式 HDR 调色 viewer，生成 tone-map 预览，并输出 HDR 指标。
 
 这是一个独立的 ComfyUI 节点包，不是 X2HDR 论文作者发布的官方实现。X2HDR 官方仓库位于：
 
@@ -13,6 +13,8 @@ https://github.com/X2HDR/X2HDR
 ## 节点
 
 - `X2HDR PU21 Decode`：将 X2HDR PU21 模型输出反解码为线性 float HDR RGB，并返回解码指标。
+- `X2HDR LogC3 Decode`：将 ARRI LogC3 EI 800 图像数据解码为场景线性 float HDR RGB。
+- `X2HDR LogC4 Decode`：将 ARRI LogC4 图像数据解码为场景线性 float HDR RGB，高光余量比 LogC3 更大。
 - `X2HDR Save EXR`：将线性 HDR 图像保存为 `.exr`，并返回清理后的 HDR tensor 供后续节点继续使用。
 - `X2HDR Color Grade`：对线性 HDR 做调色，同时输出显示用 LDR 和线性 HDR，并打开内置交互式调色 viewer。
 - `X2HDR Tone Map Preview`：生成 ACES、Reinhard 或 Log 的 LDR 预览。
@@ -45,7 +47,7 @@ X2HDR model or LoRA
 -> Save Image preview PNG，或用 X2HDR Save EXR 保存调色后的 HDR
 ```
 
-重要：这些节点不能把普通 SDR 模型输出“转换成 HDR”。`X2HDR PU21 Decode` 只负责对已经处在 X2HDR/PU21 表示中的图像做反变换。如果上游模型或 LoRA 没有按 PU21 编码 HDR 的方式训练，直接接这个节点会得到错误的颜色和亮度，不会得到真正的 HDR。
+重要：这些节点不能把普通 SDR 模型输出“转换成 HDR”。每个解码节点只反变换其名称对应的表示。如果上游模型或 LoRA 不是以匹配的 PU21、LogC3 或 LogC4 为训练目标，解码后会得到错误的颜色和亮度，而不是真正的 HDR。
 
 ## 安装
 
@@ -71,8 +73,8 @@ ComfyUI 已经提供这些节点使用的基础运行环境，包括 `torch`、`
 
 ## 典型工作流
 
-1. 使用按 X2HDR/PU21 方式训练的模型或 LoRA，例如下面的 Krea2 X2HDR LoRA。
-2. 将该工作流的 `VAE Decode` `IMAGE` 输出接到 `X2HDR PU21 Decode`。
+1. 使用以 PU21、LogC3 或 LogC4 为训练目标的 HDR 模型或 LoRA。
+2. 将该工作流的 `VAE Decode` `IMAGE` 输出接到匹配的解码节点。下面的 Krea2 X2HDR LoRA 使用 `X2HDR PU21 Decode`。
 3. 将 `hdr_image` 接到 `X2HDR Dynamic Range QA`，确认结果确实包含可用 HDR 范围。
 4. 用 `X2HDR Save EXR` 保存解码后的线性图像。
 5. 用 `X2HDR Color Grade` 做显示渲染或创意调色。
@@ -107,6 +109,14 @@ clamp_pu21 = true
 
 这些默认值对应上面的 PU21 工作流：从 `[0, 1]` PU21 空间解码，应用峰值亮度尺度，然后按 ComfyUI 实用输出需求可选地整理解码尺度。如果希望尽量保留原始解码强度，可以把 `target_luminance` 设为 `0`，关闭百分位归一化。只有当上游 tensor 是 `[-1, 1]` 居中范围时，才需要使用 `input_range = minus1_1`。
 
+## LogC3 / LogC4 解码
+
+两个 LogC 节点默认使用 `input_range = 0_1` 和 `clamp_logc = true`。它们只应用对应相机曲线的逆变换，不做峰值缩放或百分位归一化。只有当上游 tensor 位于 `[-1, 1]` 居中范围时才使用 `minus1_1`。
+
+`X2HDR LogC3 Decode` 使用 ARRI LogC3 EI 800 曲线，编码值 `1` 解码后约为 `55.1`。`X2HDR LogC4 Decode` 使用 ARRI LogC4 曲线，编码值 `1` 解码后约为 `469.8`，高光余量大约多三档。必须选择与模型或 LoRA 训练目标一致的曲线；用错解码器时，预览可能看似合理，但场景线性数值是错误的。
+
+这些节点只逐通道反解传递曲线，不应用 AWG3/AWG4 色域矩阵。除非另接色彩空间转换，解码 tensor 会保留上游 RGB 原色定义。
+
 ## 交互式 HDR 调色 Viewer
 
 先运行一次 `X2HDR Color Grade`，再点击节点上的 `Open X2HDR color grade`。
@@ -132,7 +142,7 @@ viewer 功能：
 
 ## 输出说明
 
-`X2HDR PU21 Decode` 返回 ComfyUI `IMAGE` tensor，但其中包含的是 float32 线性 HDR 值。数值大于 `1.0` 是正常现象。
+PU21 和 LogC 解码节点都返回包含 float32 线性 HDR 值的 ComfyUI `IMAGE` tensor，数值大于 `1.0` 是正常现象。LogC 低于参考黑位的编码值也可能解码为负线性值；下游 `X2HDR Save EXR` 启用 `clamp_negative` 时可以将其截到零。
 
 `X2HDR Save EXR` 保存的是线性 float HDR RGB，不做 gamma，也不做 tone-map。它的第一个输出是实际写出的、已清理的 HDR 图像，可以继续接到下游 HDR 节点，不需要重新读取 EXR。
 
@@ -159,11 +169,15 @@ viewer 功能：
 - 论文：https://arxiv.org/abs/2602.04814
 - 官方仓库：https://github.com/X2HDR/X2HDR
 
+LogC 节点参考了 MIT 许可的 [ComfyUI_Gear](https://github.com/oumad/ComfyUI_Gear) 节点和 ARRI 传递函数定义。LogC4 逆变换按 ARRI 定义在编码值 `0` 处连续分支。
+
 ## 验证建议
 
 如需和参考 HDR decode 链路对齐，可以使用同一个 PU21 tensor，并保持 `l_peak`、`target_luminance`、`target_percentile` 一致。
 
-建议误差标准：
+`tests/logc_decode_smoke.py` 覆盖 LogC 黄金值、曲线连续性、tensor 布局、节点注册和 metrics 输出。
+
+PU21 建议误差标准：
 
 ```text
 max_abs_error < 1e-4
